@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'sayfalar/main_screen.dart';
 import 'services/theme_service.dart';
 import 'providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Firebase'i başlat
+  await Firebase.initializeApp();
+  
   await ThemeService.loadTheme();
   runApp(const MyApp());
 }

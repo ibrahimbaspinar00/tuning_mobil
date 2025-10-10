@@ -7,6 +7,7 @@ import 'profil_bilgileri_sayfasi.dart';
 import 'adres_yonetimi_sayfasi.dart';
 import 'odeme_yontemleri_sayfasi.dart';
 import 'bildirim_ayarlari_sayfasi.dart';
+import 'admin_dashboard.dart';
 
 class ProfilSayfasi extends StatefulWidget {
   final List<Product> favoriteProducts;
@@ -320,6 +321,20 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                                 ),
                               );
                             },
+                          ),
+                          _buildAccountTile(
+                            icon: Icons.admin_panel_settings,
+                            title: 'Admin Panel',
+                            subtitle: 'Ürün ve stok yönetimi',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const AdminDashboard(),
+                                ),
+                              );
+                            },
+                            isAdmin: true,
                           ),
                           _buildAccountTile(
                             icon: Icons.logout,
@@ -730,26 +745,27 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
     required String subtitle,
     required VoidCallback onTap,
     bool isDestructive = false,
+    bool isAdmin = false,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isDestructive ? Colors.red[50] : Colors.grey[50],
+        color: isDestructive ? Colors.red[50] : (isAdmin ? Colors.blue[50] : Colors.grey[50]),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDestructive ? Colors.red[200]! : Colors.grey[200]!,
+          color: isDestructive ? Colors.red[200]! : (isAdmin ? Colors.blue[200]! : Colors.grey[200]!),
         ),
       ),
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isDestructive ? Colors.red[50] : Colors.purple[50],
+            color: isDestructive ? Colors.red[50] : (isAdmin ? Colors.blue[50] : Colors.purple[50]),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon, 
-            color: isDestructive ? Colors.red[600] : Colors.purple[600], 
+            color: isDestructive ? Colors.red[600] : (isAdmin ? Colors.blue[600] : Colors.purple[600]), 
             size: 20,
           ),
         ),
