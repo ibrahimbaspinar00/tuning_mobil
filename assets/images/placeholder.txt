@@ -1,0 +1,6 @@
+Bu klasörde ürün resimleri bulunacak:
+- set.jpeg (AUTOFresh Oto Bakım Seti)
+- telefon_tutucu.jpeg (Telefon Tutucu)
+- areon_arac_kokusu.jpeg (Areon Araç Kokusu)
+
+Şimdilik placeholder olarak kullanılacak.
