@@ -19,7 +19,8 @@ class OdemeYontemi {
 }
 
 class OdemeYontemleriSayfasi extends StatefulWidget {
-  const OdemeYontemleriSayfasi({super.key});
+  final bool selectMode; // true ise bir yöntem seçip geri döndürür
+  const OdemeYontemleriSayfasi({super.key, this.selectMode = false});
 
   @override
   State<OdemeYontemleriSayfasi> createState() => _OdemeYontemleriSayfasiState();
@@ -105,7 +106,11 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                     itemCount: paymentMethods.length,
                     itemBuilder: (context, index) {
                       final method = paymentMethods[index];
-                      return Container(
+                      return InkWell(
+                        onTap: widget.selectMode
+                            ? () => Navigator.pop(context, method)
+                            : null,
+                        child: Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -118,7 +123,7 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                             ),
                           ],
                         ),
-                        child: Padding(
+                          child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,6 +153,12 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                                     ),
                                   ),
                                   const Spacer(),
+                                  if (widget.selectMode)
+                                    ElevatedButton.icon(
+                                      onPressed: () => Navigator.pop(context, method),
+                                      icon: const Icon(Icons.check, size: 16),
+                                      label: const Text('Seç'),
+                                    ),
                                   PopupMenuButton<String>(
                                     onSelected: (value) {
                                       if (value == 'edit') {
@@ -247,6 +258,7 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                               ),
                             ],
                           ),
+                        ),
                         ),
                       );
                     },
@@ -374,7 +386,7 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: typeController.text,
+                  initialValue: typeController.text,
                   decoration: const InputDecoration(
                     labelText: 'Ödeme Türü',
                     border: OutlineInputBorder(),
@@ -391,6 +403,8 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: nameController,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                     labelText: 'Kart Sahibi / Yöntem Adı',
                     border: OutlineInputBorder(),
@@ -399,6 +413,8 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: numberController,
+                  keyboardType: TextInputType.number,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
                     labelText: 'Kart Numarası / Hesap Bilgisi',
                     border: OutlineInputBorder(),
@@ -407,6 +423,8 @@ class _OdemeYontemleriSayfasiState extends State<OdemeYontemleriSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: expiryController,
+                  keyboardType: TextInputType.number,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
                     labelText: 'Son Kullanma Tarihi (MM/YY)',
                     border: OutlineInputBorder(),

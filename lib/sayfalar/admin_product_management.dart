@@ -13,8 +13,6 @@ class AdminProductManagement extends StatefulWidget {
 
 class _AdminProductManagementState extends State<AdminProductManagement> {
   final AdminService _adminService = AdminService();
-  final ImagePicker _picker = ImagePicker();
-  File? _selectedImage;
 
   @override
   Widget build(BuildContext context) {
@@ -278,6 +276,8 @@ class _ProductDialogState extends State<ProductDialog> {
               // Ürün adı
               TextFormField(
                 controller: _nameController,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: 'Ürün Adı',
                   border: OutlineInputBorder(),
@@ -294,6 +294,8 @@ class _ProductDialogState extends State<ProductDialog> {
               // Açıklama
               TextFormField(
                 controller: _descriptionController,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   labelText: 'Açıklama',
                   border: OutlineInputBorder(),
@@ -310,6 +312,7 @@ class _ProductDialogState extends State<ProductDialog> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
+                textCapitalization: TextCapitalization.none,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Fiyat gerekli';
@@ -330,6 +333,7 @@ class _ProductDialogState extends State<ProductDialog> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
+                textCapitalization: TextCapitalization.none,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Stok gerekli';
@@ -345,6 +349,8 @@ class _ProductDialogState extends State<ProductDialog> {
               // Kategori
               TextFormField(
                 controller: _categoryController,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: 'Kategori',
                   border: OutlineInputBorder(),
@@ -361,6 +367,8 @@ class _ProductDialogState extends State<ProductDialog> {
               // Resim URL
               TextFormField(
                 controller: _imageUrlController,
+                keyboardType: TextInputType.url,
+                textCapitalization: TextCapitalization.none,
                 decoration: const InputDecoration(
                   labelText: 'Resim URL',
                   border: OutlineInputBorder(),

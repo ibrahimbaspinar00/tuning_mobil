@@ -3,11 +3,9 @@ import '../services/theme_service.dart';
 
 class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
-  String _selectedLanguage = 'Türkçe';
   bool _isInitialized = false;
   
   ThemeMode get themeMode => _themeMode;
-  String get selectedLanguage => _selectedLanguage;
   bool get isInitialized => _isInitialized;
   
   bool get isDarkMode => _themeMode == ThemeMode.dark;
@@ -21,7 +19,6 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> _loadSettings() async {
     await ThemeService.loadTheme();
     _themeMode = ThemeService.themeMode;
-    _selectedLanguage = ThemeService.selectedLanguage;
     _isInitialized = true;
     notifyListeners();
   }
@@ -44,11 +41,6 @@ class ThemeProvider extends ChangeNotifier {
     }
   }
   
-  Future<void> setLanguage(String language) async {
-    _selectedLanguage = language;
-    await ThemeService.setLanguage(language);
-    notifyListeners();
-  }
   
   Future<void> toggleTheme() async {
     if (_themeMode == ThemeMode.light) {
@@ -62,10 +54,11 @@ class ThemeProvider extends ChangeNotifier {
   
   // Debug için tema durumunu yazdır
   void debugThemeStatus() {
-    print('Current Theme Mode: $_themeMode');
-    print('Is Dark Mode: $isDarkMode');
-    print('Is Light Mode: $isLightMode');
-    print('Is System Mode: $isSystemMode');
-    print('Current Theme Name: $currentThemeName');
+    // Debug print statements removed for production
+    // print('Current Theme Mode: $_themeMode');
+    // print('Is Dark Mode: $isDarkMode');
+    // print('Is Light Mode: $isLightMode');
+    // print('Is System Mode: $isSystemMode');
+    // print('Current Theme Name: $currentThemeName');
   }
 }

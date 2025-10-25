@@ -313,18 +313,20 @@ class SiparisDetaySayfasi extends StatelessWidget {
     );
   }
 
-  Color _getStatusColor(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.pending:
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
         return Colors.orange;
-      case OrderStatus.confirmed:
+      case 'confirmed':
         return Colors.blue;
-      case OrderStatus.shipped:
+      case 'shipped':
         return Colors.purple;
-      case OrderStatus.delivered:
+      case 'delivered':
         return Colors.green;
-      case OrderStatus.cancelled:
+      case 'cancelled':
         return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 

@@ -11,7 +11,6 @@ class AdminStockManagement extends StatefulWidget {
 
 class _AdminStockManagementState extends State<AdminStockManagement> {
   final AdminService _adminService = AdminService();
-  String _searchQuery = '';
   String _selectedCategory = 'Tümü';
 
   @override
@@ -35,16 +34,16 @@ class _AdminStockManagementState extends State<AdminStockManagement> {
             children: [
               Expanded(
                 child: TextField(
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                     hintText: 'Ürün ara...',
                     prefixIcon: Icon(Icons.search),
                     border: OutlineInputBorder(),
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
+                onChanged: (value) {
+                  // Arama fonksiyonu
+                },
                 ),
               ),
               const SizedBox(width: 16),
@@ -192,11 +191,12 @@ class _AdminStockManagementState extends State<AdminStockManagement> {
             const SizedBox(height: 16),
             TextField(
               controller: amountController,
+              keyboardType: TextInputType.number,
+              textCapitalization: TextCapitalization.none,
               decoration: const InputDecoration(
                 labelText: 'Miktar',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: TextInputType.number,
             ),
           ],
         ),
@@ -244,11 +244,12 @@ class _AdminStockManagementState extends State<AdminStockManagement> {
             const SizedBox(height: 16),
             TextField(
               controller: stockController,
+              keyboardType: TextInputType.number,
+              textCapitalization: TextCapitalization.none,
               decoration: const InputDecoration(
                 labelText: 'Yeni Stok Miktarı',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: TextInputType.number,
             ),
           ],
         ),

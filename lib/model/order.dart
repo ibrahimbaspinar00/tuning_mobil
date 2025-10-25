@@ -1,4 +1,3 @@
-import 'product.dart';
 
 enum OrderStatus {
   pending,    // Beklemede
@@ -10,12 +9,13 @@ enum OrderStatus {
 
 class Order {
   final String id;
-  final List<Product> products;
+  final List<Map<String, dynamic>> products;
   final double totalAmount;
   final DateTime orderDate;
-  final OrderStatus status;
+  final String status;
   final String customerName;
   final String customerEmail;
+  final String customerPhone;
   final String shippingAddress;
 
   Order({
@@ -23,44 +23,49 @@ class Order {
     required this.products,
     required this.totalAmount,
     required this.orderDate,
-    this.status = OrderStatus.pending,
+    this.status = 'pending',
     required this.customerName,
     required this.customerEmail,
+    required this.customerPhone,
     required this.shippingAddress,
   });
 
   // Toplam ürün sayısı
-  int get totalItems => products.fold(0, (sum, product) => sum + product.quantity);
+  int get totalItems => products.fold(0, (sum, product) => sum + (product['quantity'] as int? ?? 0));
 
   // Sipariş durumu metni
   String get statusText {
-    switch (status) {
-      case OrderStatus.pending:
+    switch (status.toLowerCase()) {
+      case 'pending':
         return 'Beklemede';
-      case OrderStatus.confirmed:
+      case 'confirmed':
         return 'Onaylandı';
-      case OrderStatus.shipped:
+      case 'shipped':
         return 'Kargoya Verildi';
-      case OrderStatus.delivered:
+      case 'delivered':
         return 'Teslim Edildi';
-      case OrderStatus.cancelled:
+      case 'cancelled':
         return 'İptal Edildi';
+      default:
+        return 'Bilinmiyor';
     }
   }
 
   // Sipariş durumu rengi
   String get statusColor {
-    switch (status) {
-      case OrderStatus.pending:
+    switch (status.toLowerCase()) {
+      case 'pending':
         return 'orange';
-      case OrderStatus.confirmed:
+      case 'confirmed':
         return 'blue';
-      case OrderStatus.shipped:
+      case 'shipped':
         return 'purple';
-      case OrderStatus.delivered:
+      case 'delivered':
         return 'green';
-      case OrderStatus.cancelled:
+      case 'cancelled':
         return 'red';
+      default:
+        return 'grey';
     }
   }
 }

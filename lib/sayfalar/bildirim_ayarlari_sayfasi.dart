@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/notification_settings_service.dart';
 
 class BildirimAyarlariSayfasi extends StatefulWidget {
   const BildirimAyarlariSayfasi({super.key});
@@ -8,6 +9,8 @@ class BildirimAyarlariSayfasi extends StatefulWidget {
 }
 
 class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
+  final NotificationSettingsService _settingsService = NotificationSettingsService();
+  
   bool _pushNotifications = true;
   bool _emailNotifications = true;
   bool _smsNotifications = false;
@@ -16,9 +19,55 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
   bool _priceAlerts = true;
   bool _newProductAlerts = true;
   bool _securityAlerts = true;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final settings = await _settingsService.getNotificationSettings();
+      setState(() {
+        _pushNotifications = settings['pushNotifications'] ?? true;
+        _emailNotifications = settings['emailNotifications'] ?? true;
+        _smsNotifications = settings['smsNotifications'] ?? false;
+        _orderUpdates = settings['orderUpdates'] ?? true;
+        _promotionalOffers = settings['promotionalOffers'] ?? false;
+        _priceAlerts = settings['priceAlerts'] ?? true;
+        _newProductAlerts = settings['newProductAlerts'] ?? true;
+        _securityAlerts = settings['securityAlerts'] ?? true;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ayarlar yüklenemedi: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        appBar: AppBar(
+          title: const Text('Ayarlar'),
+          backgroundColor: Colors.orange[600],
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -84,7 +133,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                 // Sipariş Bildirimleri
                 _buildNotificationSection(
                   title: 'Sipariş Bildirimleri',
-                  icon: Icons.shopping_bag,
+                  icon: Icons.shopping_cart,
                   children: [
                     _buildSwitchTile(
                       title: 'Sipariş Güncellemeleri',
@@ -96,26 +145,26 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                         });
                       },
                     ),
-                    _buildSwitchTile(
-                      title: 'Güvenlik Bildirimleri',
-                      subtitle: 'Hesap güvenliği uyarıları',
-                      value: _securityAlerts,
-                      onChanged: (value) {
-                        setState(() {
-                          _securityAlerts = value;
-                        });
-                      },
-                    ),
                   ],
                 ),
                 
                 const SizedBox(height: 20),
                 
-                // Ürün Bildirimleri
+                // Promosyon Bildirimleri
                 _buildNotificationSection(
-                  title: 'Ürün Bildirimleri',
-                  icon: Icons.shopping_cart,
+                  title: 'Promosyon Bildirimleri',
+                  icon: Icons.local_offer,
                   children: [
+                    _buildSwitchTile(
+                      title: 'Promosyon Teklifleri',
+                      subtitle: 'Özel indirim ve kampanyalar',
+                      value: _promotionalOffers,
+                      onChanged: (value) {
+                        setState(() {
+                          _promotionalOffers = value;
+                        });
+                      },
+                    ),
                     _buildSwitchTile(
                       title: 'Fiyat Uyarıları',
                       subtitle: 'Favori ürünlerde fiyat değişiklikleri',
@@ -127,7 +176,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                       },
                     ),
                     _buildSwitchTile(
-                      title: 'Yeni Ürün Bildirimleri',
+                      title: 'Yeni Ürün Uyarıları',
                       subtitle: 'Yeni ürün eklemeleri',
                       value: _newProductAlerts,
                       onChanged: (value) {
@@ -141,98 +190,48 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                 
                 const SizedBox(height: 20),
                 
-                // Pazarlama Bildirimleri
+                // Güvenlik Bildirimleri
                 _buildNotificationSection(
-                  title: 'Pazarlama Bildirimleri',
-                  icon: Icons.campaign,
+                  title: 'Güvenlik Bildirimleri',
+                  icon: Icons.security,
                   children: [
                     _buildSwitchTile(
-                      title: 'Promosyon Teklifleri',
-                      subtitle: 'İndirim ve kampanya duyuruları',
-                      value: _promotionalOffers,
+                      title: 'Güvenlik Uyarıları',
+                      subtitle: 'Hesap güvenliği ile ilgili bildirimler',
+                      value: _securityAlerts,
                       onChanged: (value) {
                         setState(() {
-                          _promotionalOffers = value;
+                          _securityAlerts = value;
                         });
                       },
                     ),
                   ],
                 ),
                 
-                const SizedBox(height: 20),
-                
-                // Bildirim Zamanları
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[50],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.schedule,
-                              color: Colors.blue[600],
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Text(
-                            'Bildirim Zamanları',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTimeTile(
-                        title: 'Günlük Bildirim Saati',
-                        subtitle: '09:00 - 18:00 arası',
-                        onTap: () {
-                          _showTimePicker('Günlük Bildirim Saati');
-                        },
-                      ),
-                      _buildTimeTile(
-                        title: 'Sessiz Saatler',
-                        subtitle: '22:00 - 08:00 arası',
-                        onTap: () {
-                          _showTimePicker('Sessiz Saatler');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 20),
+                const SizedBox(height: 30),
                 
                 // Kaydet Butonu
-                SizedBox(
+                Container(
                   width: double.infinity,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.orange[600]!, Colors.orange[700]!],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.orange.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: ElevatedButton(
                     onPressed: _saveSettings,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange[600],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -240,6 +239,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                     child: const Text(
                       'Ayarları Kaydet',
                       style: TextStyle(
+                        color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -248,6 +248,49 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                 ),
                 
                 const SizedBox(height: 20),
+                
+                // Bildirim Geçmişi Butonu
+                Container(
+                  width: double.infinity,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange[300]!),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _showNotificationHistory,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.history, color: Colors.orange[600]),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Bildirim Geçmişi',
+                          style: TextStyle(
+                            color: Colors.orange[600],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -262,43 +305,44 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
     required List<Widget> children,
   }) {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: Colors.orange[600], size: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
               ),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: Colors.orange[600], size: 24),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange[800],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
           ...children,
         ],
       ),
@@ -312,13 +356,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
     required ValueChanged<bool> onChanged,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Expanded(
@@ -330,7 +368,6 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -347,74 +384,64 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.orange[600],
+            activeThumbColor: Colors.orange[600],
+            activeTrackColor: Colors.orange[200],
+            inactiveThumbColor: Colors.grey[400],
+            inactiveTrackColor: Colors.grey[200],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeTile({
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: ListTile(
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 12,
-          ),
-        ),
-        trailing: Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
-          color: Colors.grey[400],
-        ),
-        onTap: onTap,
-      ),
-    );
-  }
-
-  void _showTimePicker(String title) {
+  void _showNotificationHistory() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(title),
-          content: const Text('Zaman seçici özelliği geliştiriliyor...'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Tamam'),
-            ),
-          ],
-        );
-      },
+      builder: (context) => AlertDialog(
+        title: const Text('Bildirim Geçmişi'),
+        content: const Text('Bildirim geçmişi özelliği geliştiriliyor...'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
     );
   }
 
-  void _saveSettings() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Bildirim ayarları başarıyla kaydedildi'),
-        backgroundColor: Colors.green,
-      ),
-    );
+  Future<void> _saveSettings() async {
+    try {
+      final settings = {
+        'pushNotifications': _pushNotifications,
+        'emailNotifications': _emailNotifications,
+        'smsNotifications': _smsNotifications,
+        'orderUpdates': _orderUpdates,
+        'promotionalOffers': _promotionalOffers,
+        'priceAlerts': _priceAlerts,
+        'newProductAlerts': _newProductAlerts,
+        'securityAlerts': _securityAlerts,
+      };
+
+      await _settingsService.saveNotificationSettings(settings);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Başarılı'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ayarlar kaydedilemedi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfilBilgileriSayfasi extends StatefulWidget {
   const ProfilBilgileriSayfasi({super.key});
@@ -14,7 +16,12 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
   final _phoneController = TextEditingController(text: '+90 555 123 45 67');
   final _addressController = TextEditingController(text: 'İstanbul, Türkiye');
   
-  bool _isEditing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
 
   @override
   void dispose() {
@@ -23,6 +30,30 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
     _phoneController.dispose();
     _addressController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (doc.exists) {
+          final data = doc.data()!;
+          setState(() {
+            _nameController.text = data['fullName'] ?? 'Misafir Kullanıcı';
+            _emailController.text = data['email'] ?? 'guest@tuning.com';
+            _phoneController.text = data['phone'] ?? '+90 555 123 45 67';
+            _addressController.text = data['address'] ?? 'İstanbul, Türkiye';
+          });
+        }
+      } catch (e) {
+        print('Kullanıcı bilgileri yüklenemedi: $e');
+      }
+    }
   }
 
   @override
@@ -37,16 +68,8 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: Icon(_isEditing ? Icons.save : Icons.edit),
-            onPressed: () {
-              if (_isEditing) {
-                _saveProfile();
-              } else {
-                setState(() {
-                  _isEditing = true;
-                });
-              }
-            },
+            icon: const Icon(Icons.save),
+            onPressed: _saveProfile,
           ),
         ],
       ),
@@ -92,24 +115,23 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                                 color: Colors.grey[400],
                               ),
                             ),
-                            if (_isEditing)
-                              Positioned(
-                                bottom: 0,
-                                right: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple[600],
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(
-                                    Icons.camera_alt,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple[600],
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  color: Colors.white,
+                                  size: 20,
                                 ),
                               ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -121,16 +143,15 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                             color: Colors.grey[700],
                           ),
                         ),
-                        if (_isEditing)
-                          TextButton.icon(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Kamera açılıyor...')),
-                              );
-                            },
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Fotoğraf Değiştir'),
-                          ),
+                        TextButton.icon(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Kamera açılıyor...')),
+                            );
+                          },
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Fotoğraf Değiştir'),
+                        ),
                       ],
                     ),
                   ),
@@ -167,14 +188,14 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                           controller: _nameController,
                           label: 'Ad Soyad',
                           icon: Icons.person,
-                          enabled: _isEditing,
+                          enabled: true,
                         ),
                         const SizedBox(height: 16),
                         _buildTextField(
                           controller: _emailController,
                           label: 'E-posta',
                           icon: Icons.email,
-                          enabled: _isEditing,
+                          enabled: true,
                           keyboardType: TextInputType.emailAddress,
                         ),
                         const SizedBox(height: 16),
@@ -182,7 +203,7 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                           controller: _phoneController,
                           label: 'Telefon',
                           icon: Icons.phone,
-                          enabled: _isEditing,
+                          enabled: true,
                           keyboardType: TextInputType.phone,
                         ),
                         const SizedBox(height: 16),
@@ -190,7 +211,7 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                           controller: _addressController,
                           label: 'Adres',
                           icon: Icons.location_on,
-                          enabled: _isEditing,
+                          enabled: true,
                           maxLines: 2,
                         ),
                       ],
@@ -260,46 +281,6 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
                     ),
                   ),
                   
-                  if (_isEditing) ...[
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {
-                              setState(() {
-                                _isEditing = false;
-                              });
-                              _resetForm();
-                            },
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              side: BorderSide(color: Colors.grey[400]!),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text('İptal'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _saveProfile,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple[600],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text('Kaydet'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                   
                   const SizedBox(height: 20),
                 ],
@@ -322,7 +303,8 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
     return TextFormField(
       controller: controller,
       enabled: enabled,
-      keyboardType: keyboardType,
+      keyboardType: keyboardType ?? TextInputType.text,
+      textCapitalization: TextCapitalization.words,
       maxLines: maxLines,
       decoration: InputDecoration(
         labelText: label,
@@ -400,26 +382,44 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
     );
   }
 
-  void _saveProfile() {
+  Future<void> _saveProfile() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isEditing = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profil bilgileri başarıyla güncellendi'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .update({
+            'fullName': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'phone': _phoneController.text.trim(),
+            'address': _addressController.text.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Profil bilgileri başarıyla güncellendi'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Profil güncellenirken hata oluştu: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
     }
   }
 
-  void _resetForm() {
-    _nameController.text = 'Misafir Kullanıcı';
-    _emailController.text = 'guest@tuning.com';
-    _phoneController.text = '+90 555 123 45 67';
-    _addressController.text = 'İstanbul, Türkiye';
-  }
 
   void _showChangePasswordDialog() {
     final oldPasswordController = TextEditingController();
@@ -437,6 +437,8 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
               TextField(
                 controller: oldPasswordController,
                 obscureText: true,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.none,
                 decoration: const InputDecoration(
                   labelText: 'Mevcut Şifre',
                   border: OutlineInputBorder(),
@@ -446,6 +448,8 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
               TextField(
                 controller: newPasswordController,
                 obscureText: true,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.none,
                 decoration: const InputDecoration(
                   labelText: 'Yeni Şifre',
                   border: OutlineInputBorder(),
@@ -455,6 +459,8 @@ class _ProfilBilgileriSayfasiState extends State<ProfilBilgileriSayfasi> {
               TextField(
                 controller: confirmPasswordController,
                 obscureText: true,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.none,
                 decoration: const InputDecoration(
                   labelText: 'Yeni Şifre Tekrar',
                   border: OutlineInputBorder(),

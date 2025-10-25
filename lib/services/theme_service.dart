@@ -3,13 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeService {
   static const String _themeKey = 'theme_mode';
-  static const String _languageKey = 'selected_language';
   
   static ThemeMode _themeMode = ThemeMode.system;
-  static String _selectedLanguage = 'Türkçe';
   
   static ThemeMode get themeMode => _themeMode;
-  static String get selectedLanguage => _selectedLanguage;
   
   static bool get isDarkMode => _themeMode == ThemeMode.dark;
   static bool get isLightMode => _themeMode == ThemeMode.light;
@@ -22,12 +19,6 @@ class ThemeService {
     await prefs.setString(_themeKey, mode.toString());
   }
   
-  // Dil değiştirme
-  static Future<void> setLanguage(String language) async {
-    _selectedLanguage = language;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_languageKey, language);
-  }
   
   // Tema yükleme
   static Future<void> loadTheme() async {
@@ -38,11 +29,6 @@ class ThemeService {
         (mode) => mode.toString() == themeString,
         orElse: () => ThemeMode.system,
       );
-    }
-    
-    final language = prefs.getString(_languageKey);
-    if (language != null) {
-      _selectedLanguage = language;
     }
   }
   

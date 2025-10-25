@@ -1,11 +1,12 @@
 // Firebase configuration for web
 const firebaseConfig = {
-  apiKey: "AIzaSyDummyKeyForDevelopment123456789",
-  authDomain: "tuning-mobil-app.firebaseapp.com",
-  projectId: "tuning-mobil-app",
-  storageBucket: "tuning-mobil-app.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyBzOhIsfrHYXJz_ffuP7wspOAy35PryuD0",
+  authDomain: "tuning-app-789ce.firebaseapp.com",
+  projectId: "tuning-app-789ce",
+  storageBucket: "tuning-app-789ce.firebasestorage.app",
+  messagingSenderId: "695605179145",
+  appId: "1:695605179145:web:0131a14c4028ddd0c119d8",
+  measurementId: "G-P3JRYNC411"
 };
 
 // Initialize Firebase

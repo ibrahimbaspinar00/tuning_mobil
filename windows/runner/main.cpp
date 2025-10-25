@@ -16,6 +16,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  
+  // Türkçe karakter desteği için locale ayarları
+  SetThreadLocale(MAKELCID(MAKELANGID(LANG_TURKISH, SUBLANG_TURKISH_TURKEY), SORT_DEFAULT));
+  SetConsoleCP(1254); // Türkçe kod sayfası
+  SetConsoleOutputCP(1254);
 
   flutter::DartProject project(L"data");
 

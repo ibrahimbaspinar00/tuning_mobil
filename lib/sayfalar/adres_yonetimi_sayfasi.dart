@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Adres {
   final String id;
@@ -22,40 +24,85 @@ class Adres {
     required this.postalCode,
     this.isDefault = false,
   });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'fullName': fullName,
+      'phone': phone,
+      'address': address,
+      'city': city,
+      'district': district,
+      'postalCode': postalCode,
+      'isDefault': isDefault,
+    };
+  }
+
+  factory Adres.fromMap(Map<String, dynamic> map) {
+    return Adres(
+      id: map['id'] ?? '',
+      title: map['title'] ?? '',
+      fullName: map['fullName'] ?? '',
+      phone: map['phone'] ?? '',
+      address: map['address'] ?? '',
+      city: map['city'] ?? '',
+      district: map['district'] ?? '',
+      postalCode: map['postalCode'] ?? '',
+      isDefault: map['isDefault'] ?? false,
+    );
+  }
 }
 
 class AdresYonetimiSayfasi extends StatefulWidget {
-  const AdresYonetimiSayfasi({super.key});
+  final bool selectMode; // true ise bir adres seçip geri döndürür
+  const AdresYonetimiSayfasi({super.key, this.selectMode = false});
 
   @override
   State<AdresYonetimiSayfasi> createState() => _AdresYonetimiSayfasiState();
 }
 
 class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
-  List<Adres> addresses = [
-    Adres(
-      id: '1',
-      title: 'Ev',
-      fullName: 'Misafir Kullanıcı',
-      phone: '+90 555 123 45 67',
-      address: 'Atatürk Mahallesi, Cumhuriyet Caddesi No:123 Daire:5',
-      city: 'İstanbul',
-      district: 'Kadıköy',
-      postalCode: '34710',
-      isDefault: true,
-    ),
-    Adres(
-      id: '2',
-      title: 'İş',
-      fullName: 'Misafir Kullanıcı',
-      phone: '+90 555 123 45 67',
-      address: 'Levent Mahallesi, Büyükdere Caddesi No:45',
-      city: 'İstanbul',
-      district: 'Beşiktaş',
-      postalCode: '34330',
-      isDefault: false,
-    ),
-  ];
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<Adres> addresses = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAddresses();
+  }
+
+  Future<void> _loadAddresses() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        final querySnapshot = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('addresses')
+            .orderBy('createdAt', descending: true)
+            .get();
+
+        setState(() {
+          addresses = querySnapshot.docs
+              .map((doc) => Adres.fromMap(doc.data()))
+              .toList();
+          _isLoading = false;
+        });
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        // Error logged: Adresler yüklenirken hata: $e
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +126,13 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
         child: SafeArea(
           child: Column(
             children: [
-              if (addresses.isEmpty)
+              if (_isLoading)
+                const Expanded(
+                  child: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (addresses.isEmpty)
                 Expanded(
                   child: Center(
                     child: Column(
@@ -117,7 +170,11 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                     itemCount: addresses.length,
                     itemBuilder: (context, index) {
                       final address = addresses[index];
-                      return Container(
+                      return InkWell(
+                        onTap: widget.selectMode
+                            ? () => Navigator.pop(context, address)
+                            : null,
+                        child: Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -130,7 +187,7 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                             ),
                           ],
                         ),
-                        child: Padding(
+                          child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,6 +217,12 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                                     ),
                                   ),
                                   const Spacer(),
+                                  if (widget.selectMode)
+                                    ElevatedButton.icon(
+                                      onPressed: () => Navigator.pop(context, address),
+                                      icon: const Icon(Icons.check, size: 16),
+                                      label: const Text('Seç'),
+                                    ),
                                   PopupMenuButton<String>(
                                     onSelected: (value) {
                                       if (value == 'edit') {
@@ -243,6 +306,7 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                             ],
                           ),
                         ),
+                        ),
                       );
                     },
                   ),
@@ -282,17 +346,20 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
               child: const Text('İptal'),
             ),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  addresses.removeWhere((a) => a.id == address.id);
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Adres silindi'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+              onPressed: () async {
+                await _deleteAddressFromFirebase(address);
+                if (mounted) {
+                  setState(() {
+                    addresses.removeWhere((a) => a.id == address.id);
+                  });
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Adres silindi'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red[600],
@@ -330,7 +397,7 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
     );
   }
 
-  void _showAddressDialog({Adres? address}) {
+  void _showAddressDialog({Adres? address}) async {
     final titleController = TextEditingController(text: address?.title ?? '');
     final fullNameController = TextEditingController(text: address?.fullName ?? '');
     final phoneController = TextEditingController(text: address?.phone ?? '');
@@ -350,6 +417,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
               children: [
                 TextField(
                   controller: titleController,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                     labelText: 'Adres Başlığı (Ev, İş, vb.)',
                     border: OutlineInputBorder(),
@@ -358,6 +427,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: fullNameController,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                     labelText: 'Ad Soyad',
                     border: OutlineInputBorder(),
@@ -366,6 +437,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
                     labelText: 'Telefon',
                     border: OutlineInputBorder(),
@@ -374,6 +447,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: addressController,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                     labelText: 'Adres',
                     border: OutlineInputBorder(),
@@ -386,6 +461,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                     Expanded(
                       child: TextField(
                         controller: cityController,
+                        keyboardType: TextInputType.text,
+                        textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
                           labelText: 'Şehir',
                           border: OutlineInputBorder(),
@@ -396,6 +473,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                     Expanded(
                       child: TextField(
                         controller: districtController,
+                        keyboardType: TextInputType.text,
+                        textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
                           labelText: 'İlçe',
                           border: OutlineInputBorder(),
@@ -407,6 +486,8 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: postalCodeController,
+                  keyboardType: TextInputType.number,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
                     labelText: 'Posta Kodu',
                     border: OutlineInputBorder(),
@@ -421,7 +502,7 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
               child: const Text('İptal'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (titleController.text.isNotEmpty &&
                     fullNameController.text.isNotEmpty &&
                     phoneController.text.isNotEmpty &&
@@ -439,6 +520,9 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                     isDefault: address?.isDefault ?? addresses.isEmpty,
                   );
 
+                  // Firebase'e kaydet
+                  await _saveAddressToFirebase(newAddress, address != null);
+                  
                   setState(() {
                     if (address != null) {
                       final index = addresses.indexWhere((a) => a.id == address.id);
@@ -450,13 +534,15 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
                     }
                   });
 
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(address == null ? 'Adres eklendi' : 'Adres güncellendi'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(address == null ? 'Adres eklendi' : 'Adres güncellendi'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -472,5 +558,50 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
         );
       },
     );
+  }
+
+  Future<void> _saveAddressToFirebase(Adres address, bool isUpdate) async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        final addressData = address.toMap();
+        addressData['createdAt'] = FieldValue.serverTimestamp();
+        addressData['updatedAt'] = FieldValue.serverTimestamp();
+
+        if (isUpdate) {
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('addresses')
+              .doc(address.id)
+              .update(addressData);
+        } else {
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('addresses')
+              .doc(address.id)
+              .set(addressData);
+        }
+      } catch (e) {
+        // Error logged: Adres Firebase'e kaydedilemedi: $e
+      }
+    }
+  }
+
+  Future<void> _deleteAddressFromFirebase(Adres address) async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('addresses')
+            .doc(address.id)
+            .delete();
+      } catch (e) {
+        // Error logged: Adres Firebase'den silinemedi: $e
+      }
+    }
   }
 }

@@ -9,16 +9,18 @@ class RecommendedProducts extends StatelessWidget {
   final List<Product>? favoriteProducts;
 
   const RecommendedProducts({
-    Key? key,
+    super.key,
     required this.products,
     required this.onAddToCart,
     required this.onToggleFavorite,
     this.favoriteProducts,
-  }) : super(key: key);
+  });
 
   bool _isFavorite(Product product) {
     if (favoriteProducts == null) return false;
-    return favoriteProducts!.any((p) => p.name == product.name);
+    String normalize(String s) => s.trim().toLowerCase();
+    final target = normalize(product.name);
+    return favoriteProducts!.any((p) => normalize(p.name) == target);
   }
 
   @override
@@ -133,8 +135,9 @@ class RecommendedProducts extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                   color: Colors.black87,
                                 ),
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 1),
                               // Fiyat
@@ -164,7 +167,7 @@ class RecommendedProducts extends StatelessWidget {
                                       child: Icon(
                                         _isFavorite(product) ? Icons.favorite : Icons.favorite_border,
                                         size: 14,
-                                        color: _isFavorite(product) ? Colors.red : Colors.grey,
+                                        color: _isFavorite(product) ? Colors.red[600] : Colors.grey,
                                       ),
                                     ),
                                   ),
