@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:io';
 import '../model/admin_product.dart';
 import '../model/admin_user.dart';
 import '../model/order.dart' as OrderModel;
+import '../model/product.dart';
 
 class AdminService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -182,6 +185,96 @@ class AdminService {
     }
   }
 
+  // Firebase Storage bağlantı testi
+  Future<bool> testStorageConnection() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        print('Debug: Firebase başlatılmamış');
+        return false;
+      }
+      
+      // Test dosyası oluştur
+      final testRef = _storage.ref().child('test/connection_test.txt');
+      await testRef.putString('test');
+      await testRef.delete();
+      
+      print('Debug: Firebase Storage bağlantısı başarılı');
+      return true;
+    } catch (e) {
+      print('Debug: Firebase Storage bağlantı hatası: $e');
+      return false;
+    }
+  }
+
+  // Serbest yol ile yükleme (koleksiyon vb. için)
+  Future<String> uploadToPath(File imageFile, String pathPrefix) async {
+    try {
+      // Firebase'in başlatıldığını kontrol et
+      if (!Firebase.apps.isNotEmpty) {
+        throw Exception('Firebase başlatılmamış. Lütfen uygulamayı yeniden başlatın.');
+      }
+      
+      final String fileName = '$pathPrefix/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final Reference ref = _storage.ref().child(fileName);
+      final UploadTask uploadTask = ref.putFile(imageFile);
+      final TaskSnapshot snapshot = await uploadTask;
+      return await snapshot.ref.getDownloadURL();
+    } on FirebaseException catch (e) {
+      // Daha açıklayıcı Firebase hatası
+      String errorMessage = 'Firebase Storage hatası: ${e.code}';
+      if (e.message != null) {
+        errorMessage += ' - ${e.message}';
+      }
+      
+      // Yaygın hatalar için Türkçe açıklama
+      switch (e.code) {
+        case 'storage/unauthorized':
+          errorMessage = 'Yükleme izni yok. Lütfen giriş yapın.';
+          break;
+        case 'storage/canceled':
+          errorMessage = 'Yükleme iptal edildi.';
+          break;
+        case 'storage/unknown':
+          errorMessage = 'Bilinmeyen Firebase hatası.';
+          break;
+        case 'storage/invalid-argument':
+          errorMessage = 'Geçersiz dosya.';
+          break;
+        case 'storage/invalid-checksum':
+          errorMessage = 'Dosya bozuk.';
+          break;
+        case 'storage/retry-limit-exceeded':
+          errorMessage = 'Çok fazla deneme. Lütfen tekrar deneyin.';
+          break;
+        case 'storage/invalid-format':
+          errorMessage = 'Desteklenmeyen dosya formatı.';
+          break;
+        case 'storage/invalid-event-name':
+          errorMessage = 'Geçersiz işlem.';
+          break;
+        case 'storage/invalid-url':
+          errorMessage = 'Geçersiz URL.';
+          break;
+        case 'storage/no-default-bucket':
+          errorMessage = 'Firebase Storage yapılandırılmamış.';
+          break;
+        case 'storage/cannot-slice-blob':
+          errorMessage = 'Dosya işlenemiyor.';
+          break;
+        case 'storage/server-file-wrong-size':
+          errorMessage = 'Dosya boyutu uyumsuz.';
+          break;
+      }
+      
+      throw Exception(errorMessage);
+    } catch (e) {
+      if (e.toString().contains('no object') || e.toString().contains('Firebase')) {
+        throw Exception('Firebase bağlantı hatası. Lütfen internet bağlantınızı kontrol edin ve uygulamayı yeniden başlatın.');
+      }
+      throw Exception('Dosya yüklenemedi: $e');
+    }
+  }
+
   // Kategori ekleme
   Future<String> addCategory(ProductCategory category) async {
     try {
@@ -336,7 +429,9 @@ class AdminService {
         final data = doc.data();
         return OrderModel.Order(
           id: doc.id,
-          products: List<Map<String, dynamic>>.from(data['products'] ?? []),
+          products: (data['products'] as List<dynamic>?)
+              ?.map((p) => Product.fromMap(p as Map<String, dynamic>))
+              .toList() ?? [],
           totalAmount: (data['totalAmount'] ?? 0.0).toDouble(),
           orderDate: (data['orderDate'] as Timestamp).toDate(),
           status: data['status'] ?? 'pending',
@@ -404,7 +499,17 @@ class AdminService {
 
   // Ürün stok kontrolü
   Future<Map<String, dynamic>> checkProductStock(String productName, int requestedQuantity) async {
+    debugPrint('📦 [STOK KONTROL] ===========================================');
+    debugPrint('📦 [STOK KONTROL] Fonksiyon başladı - ${DateTime.now()}');
+    debugPrint('📦 [STOK KONTROL] Parametreler:');
+    debugPrint('   - Ürün adı: $productName');
+    debugPrint('   - İstenen miktar: $requestedQuantity');
+    
     try {
+      debugPrint('📦 [STOK KONTROL] Firestore sorgusu başlatılıyor...');
+      debugPrint('   - Collection: products');
+      debugPrint('   - Where: name == "$productName"');
+      
       // Ürün adına göre arama yap
       final querySnapshot = await _firestore
           .collection('products')
@@ -412,36 +517,73 @@ class AdminService {
           .limit(1)
           .get();
       
+      debugPrint('📦 [STOK KONTROL] Firestore sorgusu tamamlandı');
+      debugPrint('   - Bulunan döküman sayısı: ${querySnapshot.docs.length}');
+      
       if (querySnapshot.docs.isEmpty) {
-        return {
+        debugPrint('❌ [STOK KONTROL] Ürün bulunamadı!');
+        debugPrint('   - Aranan ürün adı: $productName');
+        final result = {
           'success': false,
           'error': 'Ürün bulunamadı: $productName'
         };
+        debugPrint('📦 [STOK KONTROL] Dönen sonuç: $result');
+        debugPrint('📦 [STOK KONTROL] ===========================================');
+        return result;
       }
       
+      debugPrint('✅ [STOK KONTROL] Ürün bulundu!');
       final productDoc = querySnapshot.docs.first;
+      debugPrint('   - Döküman ID: ${productDoc.id}');
+      
       final productData = productDoc.data();
+      debugPrint('📦 [STOK KONTROL] Ürün verisi alındı:');
+      debugPrint('   - Veri anahtarları: ${productData.keys.toList()}');
+      
       final currentStock = productData['stock'] as int? ?? 0;
+      debugPrint('📦 [STOK KONTROL] Stok bilgisi:');
+      debugPrint('   - Mevcut stok: $currentStock');
+      debugPrint('   - İstenen miktar: $requestedQuantity');
+      debugPrint('   - Stok yeterli mi? ${currentStock >= requestedQuantity}');
       
       if (currentStock < requestedQuantity) {
-        return {
+        debugPrint('❌ [STOK KONTROL] Stok yetersiz!');
+        debugPrint('   - Mevcut stok: $currentStock');
+        debugPrint('   - İstenen miktar: $requestedQuantity');
+        debugPrint('   - Eksik miktar: ${requestedQuantity - currentStock}');
+        final result = {
           'success': false,
           'error': 'Ürün tükendi: $productName (Mevcut stok: $currentStock)',
           'currentStock': currentStock
         };
+        debugPrint('📦 [STOK KONTROL] Dönen sonuç: $result');
+        debugPrint('📦 [STOK KONTROL] ===========================================');
+        return result;
       }
       
-      return {
+      debugPrint('✅ [STOK KONTROL] Stok yeterli!');
+      final result = {
         'success': true,
         'currentStock': currentStock,
         'productId': productDoc.id
       };
+      debugPrint('📦 [STOK KONTROL] Dönen sonuç: $result');
+      debugPrint('📦 [STOK KONTROL] ===========================================');
+      return result;
       
-    } catch (e) {
-      return {
+    } catch (e, stackTrace) {
+      debugPrint('❌ [STOK KONTROL] KRİTİK HATA YAKALANDI!');
+      debugPrint('   - Hata tipi: ${e.runtimeType}');
+      debugPrint('   - Hata mesajı: $e');
+      debugPrint('   - Stack trace:');
+      debugPrint('$stackTrace');
+      final result = {
         'success': false,
         'error': 'Stok kontrolü sırasında hata: $e'
       };
+      debugPrint('📦 [STOK KONTROL] Dönen sonuç: $result');
+      debugPrint('📦 [STOK KONTROL] ===========================================');
+      return result;
     }
   }
 

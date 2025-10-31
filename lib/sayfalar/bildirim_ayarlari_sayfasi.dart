@@ -273,18 +273,24 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.history, color: Colors.orange[600]),
                         const SizedBox(width: 8),
-                        Text(
-                          'Bildirim Geçmişi',
-                          style: TextStyle(
-                            color: Colors.orange[600],
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            'Bildirim Geçmişi',
+                            style: TextStyle(
+                              color: Colors.orange[600],
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

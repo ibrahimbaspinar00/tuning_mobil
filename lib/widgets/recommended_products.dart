@@ -153,6 +153,7 @@ class RecommendedProducts extends StatelessWidget {
                               // Butonlar
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   // Favori butonu
                                   GestureDetector(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/no_overflow.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../widgets/error_handler.dart';
 import '../services/user_auth_service.dart';
@@ -216,10 +217,9 @@ class _GirisSayfasiState extends State<GirisSayfasi> with AutomaticKeepAliveClie
             stops: const [0.0, 0.5, 1.0],
           ),
         ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+        child: NoOverflow(
+          padding: const EdgeInsets.all(20),
+          child: Column(
               children: [
                 const SizedBox(height: 40),
                 // Logo ve başlık
@@ -626,7 +626,6 @@ class _GirisSayfasiState extends State<GirisSayfasi> with AutomaticKeepAliveClie
             ),
           ),
         ),
-      ),
     );
   }
 }

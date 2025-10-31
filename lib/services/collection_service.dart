@@ -10,19 +10,59 @@ class CollectionService {
   // Kullanıcının koleksiyonlarını getir
   Future<List<Collection>> getUserCollections() async {
     final user = _auth.currentUser;
-    if (user == null) return [];
+    print('Debug: CollectionService - Getting collections for user: ${user?.uid}');
+    
+    if (user == null) {
+      print('Debug: CollectionService - No user logged in, returning empty list');
+      // Kullanıcı giriş yapmamışsa boş liste döndür
+      return [];
+    }
 
     try {
-      final snapshot = await _firestore
-          .collection('collections')
-          .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .get();
+      // Offline-first approach - önce cache'den dene
+      QuerySnapshot snapshot;
+      try {
+        snapshot = await _firestore
+            .collection('collections')
+            .where('userId', isEqualTo: user.uid)
+            .orderBy('updatedAt', descending: true)
+            .limit(50) // Daha fazla koleksiyon gösterebilir
+            .get(const GetOptions(source: Source.serverAndCache));
+      } catch (e) {
+        // Server hatası olursa cache'den oku
+        print('Debug: CollectionService - Server error, trying cache: $e');
+        snapshot = await _firestore
+            .collection('collections')
+            .where('userId', isEqualTo: user.uid)
+            .orderBy('updatedAt', descending: true)
+            .limit(50)
+            .get(const GetOptions(source: Source.cache));
+      }
       
-      return snapshot.docs.map((doc) {
-        return Collection.fromMap(doc.data());
-      }).toList();
+      print('Debug: CollectionService - Found ${snapshot.docs.length} collections');
+      
+      // Client-side parsing with error handling
+      final collections = <Collection>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          data['id'] = doc.id;
+          final collection = Collection.fromMap(data);
+          collections.add(collection);
+        } catch (e) {
+          print('Debug: CollectionService - Error parsing collection ${doc.id}: $e');
+          // Hatalı dokümanı atla
+          continue;
+        }
+      }
+
+      // Zaten orderBy ile sıralanmış ama yine de sırala
+      collections.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      print('Debug: CollectionService - Successfully parsed ${collections.length} collections');
+      return collections;
     } catch (e) {
+      print('Debug: CollectionService - Error getting collections: $e');
+      // Hata durumunda boş liste döndür
       return [];
     }
   }
@@ -30,25 +70,60 @@ class CollectionService {
   // Yeni koleksiyon oluştur
   Future<String> createCollection(Collection collection) async {
     final user = _auth.currentUser;
-    if (user == null) throw Exception('Kullanıcı giriş yapmamış');
+    print('Debug: CollectionService - Current user: ${user?.uid}');
+    
+    if (user == null) {
+      print('Debug: CollectionService - No user logged in, cannot create collection');
+      throw Exception('Koleksiyon oluşturmak için giriş yapmalısınız');
+    }
 
-    await _firestore
-        .collection('collections')
-        .doc(collection.id)
-        .set(collection.toMap());
-
-    return collection.id;
+    print('Debug: CollectionService - Creating collection with ID: ${collection.id}');
+    print('Debug: CollectionService - User ID: ${user.uid}');
+    
+    try {
+      await _firestore
+          .collection('collections')
+          .doc(collection.id)
+          .set(collection.toMap());
+      
+      print('Debug: CollectionService - Collection saved to Firestore');
+      return collection.id;
+    } catch (e) {
+      print('Debug: CollectionService - Error saving to Firestore: $e');
+      rethrow;
+    }
   }
 
   // Koleksiyona ürün ekle
-  Future<void> addProductToCollection(String collectionId, String productId) async {
+  Future<void> addProductToCollection(String collectionId, String productId, {String? productImageUrl}) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Kullanıcı giriş yapmamış');
 
-    await _firestore.collection('collections').doc(collectionId).update({
+    // Koleksiyon bilgilerini al
+    final collectionDoc = await _firestore.collection('collections').doc(collectionId).get();
+    if (!collectionDoc.exists) {
+      throw Exception('Koleksiyon bulunamadı');
+    }
+    
+    final collectionData = collectionDoc.data()!;
+    final currentProductIds = List<String>.from(collectionData['productIds'] ?? []);
+    final currentCoverImageUrl = collectionData['coverImageUrl'] as String?;
+    
+    // Eğer koleksiyon boşsa ve ürün imageUrl'i varsa, kapak fotoğrafı olarak ayarla
+    Map<String, dynamic> updateData = {
       'productIds': FieldValue.arrayUnion([productId]),
       'updatedAt': DateTime.now().toIso8601String(),
-    });
+    };
+    
+    // Eğer koleksiyon boşsa ve kapak fotoğrafı yoksa, ilk ürünün fotoğrafını kapak yap
+    if (currentProductIds.isEmpty && 
+        (currentCoverImageUrl == null || currentCoverImageUrl.isEmpty) &&
+        productImageUrl != null && productImageUrl.isNotEmpty) {
+      updateData['coverImageUrl'] = productImageUrl;
+      print('Debug: İlk ürün eklendi, kapak fotoğrafı ayarlandı: $productImageUrl');
+    }
+
+    await _firestore.collection('collections').doc(collectionId).update(updateData);
   }
 
   // Koleksiyondan ürün çıkar
@@ -60,6 +135,17 @@ class CollectionService {
       'productIds': FieldValue.arrayRemove([productId]),
       'updatedAt': DateTime.now().toIso8601String(),
     });
+  }
+
+  // Koleksiyonu güncelle
+  Future<void> updateCollection(Collection collection) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Kullanıcı giriş yapmamış');
+
+    await _firestore
+        .collection('collections')
+        .doc(collection.id)
+        .update(collection.toMap());
   }
 
   // Koleksiyonu sil

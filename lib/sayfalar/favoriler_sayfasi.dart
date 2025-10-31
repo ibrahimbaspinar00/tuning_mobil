@@ -13,6 +13,7 @@ class FavorilerSayfasi extends StatefulWidget {
   final Function(Product, {bool showMessage}) onFavoriteToggle;
   final Function(Product, {bool showMessage})? onAddToCart;
   final List<Product>? cartProducts;
+  final VoidCallback? onNavigateToMainPage;
 
   const FavorilerSayfasi({
     super.key,
@@ -20,6 +21,7 @@ class FavorilerSayfasi extends StatefulWidget {
     required this.onFavoriteToggle,
     this.onAddToCart,
     this.cartProducts,
+    this.onNavigateToMainPage,
   });
 
   @override
@@ -163,7 +165,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(
           'Listelerim',
@@ -209,12 +211,10 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 onChanged: _performSearch,
-                onTap: () {
-                  // Focus'u zorla koru
-                  _searchFocusNode.requestFocus();
-                  // Klavye açılmasını zorla
-                  SystemChannels.textInput.invokeMethod('TextInput.show');
-                },
+                textInputAction: TextInputAction.search,
+                keyboardType: TextInputType.text,
+                enableSuggestions: false,
+                autocorrect: false,
                 decoration: InputDecoration(
                   hintText: 'Ürün ara...',
                   prefixIcon: const Icon(Icons.search),
@@ -230,6 +230,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
             ),
@@ -418,6 +419,20 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
+                                SizedBox(height: isSmallScreen ? 16 : 20),
+                                ElevatedButton.icon(
+                                  onPressed: widget.onNavigateToMainPage,
+                                  icon: const Icon(Icons.shopping_cart),
+                                  label: const Text('Ürünlere Gözat'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Theme.of(context).primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ],
                           ),
@@ -470,6 +485,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                 product: product,
                 onFavoriteToggle: widget.onFavoriteToggle,
                 onAddToCart: widget.onAddToCart ?? (p) {},
+                onRemoveFromCart: (p) {}, // Favoriler sayfasında remove from cart işlevi yok
                 favoriteProducts: widget.favoriteProducts,
                 cartProducts: widget.cartProducts ?? [],
               ),
@@ -482,7 +498,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
           children: [
             // Ürün resmi
             Expanded(
-              flex: 3,
+              flex: 2, // Daha küçük resim alanı
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -501,9 +517,9 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             
             // Ürün bilgileri
             Expanded(
-              flex: 2,
+              flex: 3, // Daha büyük bilgi alanı
               child: Padding(
-                padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
+                padding: EdgeInsets.all(isSmallScreen ? 4 : 6), // Daha küçük padding
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

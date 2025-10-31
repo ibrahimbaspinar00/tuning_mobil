@@ -131,11 +131,14 @@ class ProfessionalComponents {
           Icon(icon, size: 18),
           const SizedBox(width: 8),
         ],
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: size == ButtonSize.small ? 12 : 14,
-            fontWeight: FontWeight.w600,
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: size == ButtonSize.small ? 12 : 14,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -150,6 +153,8 @@ class ProfessionalComponents {
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           side: BorderSide(color: foregroundColor),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         child: buttonChild,
       );
@@ -165,6 +170,8 @@ class ProfessionalComponents {
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         elevation: 2,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: buttonChild,
     );
@@ -274,47 +281,58 @@ class ProfessionalComponents {
     String? buttonText,
     VoidCallback? onButtonPressed,
   }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: 64,
-                color: Colors.grey[400],
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: 300, // Minimum yükseklik
+        ),
+        child: IntrinsicHeight(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24), // Daha küçük padding
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(
+                      icon,
+                      size: 56, // Daha küçük icon
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16, // Daha küçük font
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      fontSize: 13, // Daha küçük font
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (buttonText != null && onButtonPressed != null) ...[
+                    const SizedBox(height: 20),
+                    createButton(
+                      text: buttonText,
+                      onPressed: onButtonPressed,
+                      type: ButtonType.primary,
+                      size: ButtonSize.small, // Daha küçük buton
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-            ],
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.black54,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (buttonText != null && onButtonPressed != null) ...[
-              const SizedBox(height: 24),
-              createButton(
-                text: buttonText,
-                onPressed: onButtonPressed,
-                type: ButtonType.primary,
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

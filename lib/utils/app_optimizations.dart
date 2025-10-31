@@ -128,14 +128,25 @@ class AppOptimizations {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.error, size: 64, color: Colors.red),
           const SizedBox(height: 16),
-          Text(message),
+          Flexible(
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (onRetry != null) ...[
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: onRetry,
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               child: const Text('Tekrar Dene'),
             ),
           ],

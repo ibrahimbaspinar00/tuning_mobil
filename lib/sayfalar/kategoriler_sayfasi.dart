@@ -11,6 +11,7 @@ class KategorilerSayfasi extends StatefulWidget {
   final List<Product> cartProducts;
   final Function(Product) onFavoriteToggle;
   final Function(Product) onAddToCart;
+  final Function(Product) onRemoveFromCart;
 
   const KategorilerSayfasi({
     super.key,
@@ -18,6 +19,7 @@ class KategorilerSayfasi extends StatefulWidget {
     required this.cartProducts,
     required this.onFavoriteToggle,
     required this.onAddToCart,
+    required this.onRemoveFromCart,
   });
 
   @override
@@ -206,8 +208,12 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
   }
 
   Widget _buildCategorySelector() {
+    final width = MediaQuery.of(context).size.width;
+    final double itemWidth = width * 0.24;
+    final double clampedItemWidth = itemWidth.clamp(84.0, 110.0);
+
     return Container(
-      height: 120,
+      height: 110,
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -226,9 +232,9 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
               });
             },
             child: Container(
-              width: 100,
+              width: clampedItemWidth,
               margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               decoration: BoxDecoration(
                 color: isSelected ? category.color : Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -250,14 +256,14 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
                   Icon(
                     category.icon,
                     color: isSelected ? Colors.white : category.color,
-                    size: 32,
+                    size: clampedItemWidth <= 90 ? 26 : 30,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     category.name,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.black87,
-                      fontSize: 12,
+                      fontSize: clampedItemWidth <= 90 ? 11 : 12,
                       fontWeight: FontWeight.w600,
                     ),
                     textAlign: TextAlign.center,
@@ -269,7 +275,7 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
                     '${category.productCount}',
                     style: TextStyle(
                       color: isSelected ? Colors.white70 : Colors.grey,
-                      fontSize: 10,
+                      fontSize: clampedItemWidth <= 90 ? 9 : 10,
                     ),
                   ),
                 ],
@@ -282,93 +288,118 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
   }
 
   Widget _buildFilters() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: Column(
-        children: [
-          // Sıralama
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool narrow = constraints.maxWidth < 360;
+        return Container(
+          padding: EdgeInsets.all(narrow ? 12 : 16),
+          color: Colors.white,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               const Text('Sırala:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _sortBy,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    isDense: true,
-                  ),
-                  items: _sortOptions.map((option) {
-                    return DropdownMenuItem(
-                      value: option,
-                      child: Text(
-                        option,
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
+              // Sıralama
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  const Text('Sırala:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: 160,
+                      maxWidth: constraints.maxWidth - 40,
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      value: _sortBy,
+                      isDense: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        isDense: true,
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (!mounted) return;
-                    setState(() {
-                      _sortBy = value!;
-                      _filterProducts();
-                    });
-                  },
-                ),
+                      items: _sortOptions.map((option) {
+                        return DropdownMenuItem(
+                          value: option,
+                          child: Text(
+                            option,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (!mounted) return;
+                        setState(() {
+                          _sortBy = value!;
+                          _filterProducts();
+                        });
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
           
           const SizedBox(height: 16),
           
-          // Fiyat aralığı
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Fiyat: ${_minPrice.toInt()}₺ - ${_maxPrice.toInt()}₺',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              RangeSlider(
-                values: RangeValues(_minPrice, _maxPrice),
-                min: 0,
-                max: 10000,
-                divisions: 100,
-                onChanged: (values) {
-                  if (!mounted) return;
-                  setState(() {
-                    _minPrice = values.start;
-                    _maxPrice = values.end;
-                    _filterProducts();
-                  });
-                },
+              // Fiyat aralığı
+              const SizedBox(height: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Fiyat: ${_minPrice.toInt()}₺ - ${_maxPrice.toInt()}₺',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  RangeSlider(
+                    values: RangeValues(_minPrice, _maxPrice),
+                    min: 0,
+                    max: 10000,
+                    divisions: 100,
+                    onChanged: (values) {
+                      if (!mounted) return;
+                      setState(() {
+                        _minPrice = values.start;
+                        _maxPrice = values.end;
+                        _filterProducts();
+                      });
+                    },
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildProductGrid() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final crossAxisCount = screenWidth > 600 ? 3 : 2;
+    final crossAxisCount = screenWidth >= 900 ? 4 : screenWidth > 600 ? 3 : 2;
+    final bool veryNarrow = screenWidth < 360;
+    final bool narrow = screenWidth < 400;
+    final double aspect = screenWidth >= 900
+        ? 0.9
+        : screenWidth > 600
+            ? 0.85
+            : veryNarrow
+                ? 0.70
+                : narrow
+                    ? 0.78
+                    : 0.82;
 
     return GridView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12), // Daha küçük padding
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 600 ? 0.7 : 0.75,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+        childAspectRatio: aspect, // responsive aspect ratio
+        crossAxisSpacing: 8, // Daha küçük spacing
+        mainAxisSpacing: 8, // Daha küçük spacing
       ),
       itemCount: _filteredProducts.length,
       itemBuilder: (context, index) {
@@ -385,10 +416,11 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
     return ProfessionalComponents.createCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Ürün resmi
-          Expanded(
-            flex: 3,
+          AspectRatio(
+            aspectRatio: 1,
             child: GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -398,6 +430,7 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
                       product: product,
                       onFavoriteToggle: widget.onFavoriteToggle,
                       onAddToCart: widget.onAddToCart,
+                      onRemoveFromCart: widget.onRemoveFromCart,
                       favoriteProducts: widget.favoriteProducts,
                       cartProducts: widget.cartProducts,
                     ),
@@ -447,10 +480,11 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
           const SizedBox(height: 8),
           
           // Ürün bilgileri
-          Expanded(
-            flex: 2,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   product.name,
@@ -461,21 +495,16 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                
                 const SizedBox(height: 4),
-                
                 Text(
                   '${product.price.toStringAsFixed(2)} ₺',
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: Colors.green,
                   ),
                 ),
-                
                 const SizedBox(height: 8),
-                
-                // Sepete ekle butonu
                 SizedBox(
                   width: double.infinity,
                   child: ProfessionalComponents.createButton(

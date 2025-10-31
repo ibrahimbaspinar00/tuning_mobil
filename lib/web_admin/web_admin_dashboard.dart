@@ -46,11 +46,13 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
                   width: sidebarWidth,
             color: Colors.blue[900],
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 // Header
                 Container(
                   padding: const EdgeInsets.all(24),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       CircleAvatar(
                         radius: 30,

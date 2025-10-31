@@ -6,6 +6,7 @@ class Collection {
   final List<String> productIds;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? coverImageUrl;
 
   Collection({
     required this.id,
@@ -15,6 +16,7 @@ class Collection {
     required this.productIds,
     required this.createdAt,
     required this.updatedAt,
+    this.coverImageUrl,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +28,7 @@ class Collection {
       'productIds': productIds,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      if (coverImageUrl != null) 'coverImageUrl': coverImageUrl,
     };
   }
 
@@ -36,8 +39,35 @@ class Collection {
       description: map['description'] ?? '',
       userId: map['userId'] ?? '',
       productIds: List<String>.from(map['productIds'] ?? []),
-      createdAt: DateTime.parse(map['createdAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(map['updatedAt'] ?? DateTime.now().toIso8601String()),
+      createdAt: _parseDateTime(map['createdAt']),
+      updatedAt: _parseDateTime(map['updatedAt']),
+      coverImageUrl: map['coverImageUrl'] as String?,
     );
+  }
+
+  static DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    
+    // Firebase Timestamp tipini kontrol et
+    if (value.toString().contains('Timestamp')) {
+      try {
+        // Timestamp'i DateTime'a çevir
+        return DateTime.fromMillisecondsSinceEpoch(value.millisecondsSinceEpoch);
+      } catch (e) {
+        return DateTime.now();
+      }
+    }
+    
+    // String tipini kontrol et
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+    
+    // DateTime tipini kontrol et
+    if (value is DateTime) {
+      return value;
+    }
+    
+    return DateTime.now();
   }
 }

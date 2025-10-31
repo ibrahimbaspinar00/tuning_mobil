@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/firebase_data_service.dart';
+import '../services/order_service.dart';
 import '../widgets/professional_components.dart';
 import '../utils/professional_animations.dart';
 import '../utils/professional_error_handler.dart';
@@ -8,6 +11,7 @@ import 'adres_yonetimi_sayfasi.dart';
 import 'odeme_yontemleri_sayfasi.dart';
 import 'bildirim_ayarlari_sayfasi.dart';
 import 'para_yukleme_sayfasi.dart';
+import 'giris_sayfasi.dart';
 
 class HesabimSayfasi extends StatefulWidget {
   const HesabimSayfasi({super.key});
@@ -19,9 +23,16 @@ class HesabimSayfasi extends StatefulWidget {
 class _HesabimSayfasiState extends State<HesabimSayfasi> {
   String _userName = 'Kullanıcı';
   String _userEmail = 'kullanici@example.com';
+  String? _profileImageUrl;
   double _walletBalance = 0.0;
   int _orderCount = 0;
   int _favoriteCount = 0;
+  bool _isLoading = true;
+  
+  // Services
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseDataService _firebaseDataService = FirebaseDataService();
+  final OrderService _orderService = OrderService();
 
   @override
   void initState() {
@@ -30,14 +41,63 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
   }
 
   Future<void> _loadUserData() async {
-    // Demo veriler
-    setState(() {
-      _userName = 'Ahmet Yılmaz';
-      _userEmail = 'ahmet@example.com';
-      _walletBalance = 250.50;
-      _orderCount = 5;
-      _favoriteCount = 12;
-    });
+    try {
+      // Kullanıcı giriş yapmış mı kontrol et
+      final user = _auth.currentUser;
+      if (user == null) {
+        // Kullanıcı giriş yapmamış - varsayılan değerlerle devam et
+        if (mounted) {
+          setState(() {
+            _userName = 'Misafir Kullanıcı';
+            _userEmail = 'Giriş yapmak için tıklayın';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+      
+      setState(() => _isLoading = true);
+      
+      // Firebase'den kullanıcı bilgilerini yükle
+      final userProfile = await _firebaseDataService.getUserProfile();
+      final userStats = await _firebaseDataService.getUserStats();
+      
+      if (mounted) {
+        setState(() {
+          _userName = userProfile?['fullName'] ?? 'Kullanıcı';
+          _userEmail = userProfile?['email'] ?? 'kullanici@example.com';
+          _profileImageUrl = userProfile?['profileImageUrl'];
+          _walletBalance = userStats['walletBalance']?.toDouble() ?? 0.0;
+          _orderCount = userStats['totalOrders'] ?? 0;
+          _favoriteCount = userStats['favoriteCount'] ?? 0;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user data: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await _auth.signOut();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const GirisSayfasi()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      ProfessionalErrorHandler.showError(
+        context: context,
+        title: 'Çıkış Hatası',
+        message: 'Çıkış yapılırken hata oluştu: $e',
+      );
+    }
   }
 
   @override
@@ -55,6 +115,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
       ),
       body: SingleChildScrollView(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Profil kartı
             _buildProfileCard(),
@@ -88,6 +149,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
     return ProfessionalComponents.createCard(
       margin: const EdgeInsets.all(16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Profil resmi ve bilgiler
           Row(
@@ -108,6 +170,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       _userName,
@@ -411,17 +474,34 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
   }
 
   Widget _buildLogoutButton() {
+    final user = _auth.currentUser;
+    final isLoggedIn = user != null;
+    
     return Container(
       margin: const EdgeInsets.all(16),
       child: ProfessionalComponents.createButton(
-        text: 'Çıkış Yap',
-        onPressed: _showLogoutDialog,
-        type: ButtonType.danger,
+        text: isLoggedIn ? 'Çıkış Yap' : 'Giriş Yap',
+        onPressed: isLoggedIn ? _showLogoutDialog : _navigateToLogin,
+        type: isLoggedIn ? ButtonType.danger : ButtonType.primary,
         size: ButtonSize.large,
-        icon: Icons.logout,
+        icon: isLoggedIn ? Icons.logout : Icons.login,
         isFullWidth: true,
       ),
     );
+  }
+
+  void _navigateToLogin() {
+    Navigator.push(
+      context,
+      ProfessionalAnimations.createSlideRoute(
+        const GirisSayfasi(),
+      ),
+    ).then((value) {
+      // Giriş yapıldıktan sonra kullanıcı bilgilerini yeniden yükle
+      if (mounted) {
+        _loadUserData();
+      }
+    });
   }
 
   void _showSettingsDialog() {

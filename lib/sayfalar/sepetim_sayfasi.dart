@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../widgets/no_overflow.dart';
 import '../model/product.dart';
+import '../services/firebase_data_service.dart';
+import '../services/order_service.dart';
 import '../widgets/optimized_image.dart';
 import '../widgets/professional_components.dart';
 import '../utils/professional_animations.dart';
@@ -11,6 +14,7 @@ class SepetimSayfasi extends StatefulWidget {
   final Function(Product) onRemoveFromCart;
   final Function(Product, int) onUpdateQuantity;
   final Function() onPlaceOrder;
+  final VoidCallback? onNavigateToMainPage;
 
   const SepetimSayfasi({
     super.key,
@@ -18,6 +22,7 @@ class SepetimSayfasi extends StatefulWidget {
     required this.onRemoveFromCart,
     required this.onUpdateQuantity,
     required this.onPlaceOrder,
+    this.onNavigateToMainPage,
   });
 
   @override
@@ -30,6 +35,11 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
   double _couponDiscount = 0.0;
   bool _isCouponApplied = false;
   double _shippingCost = 25.0; // Sabit kargo ücreti
+  bool _isLoading = false;
+  
+  // Services
+  final FirebaseDataService _firebaseDataService = FirebaseDataService();
+  final OrderService _orderService = OrderService();
 
   double get _subtotal {
     return widget.cartProducts.fold(0.0, (sum, product) => sum + (product.price * product.quantity));
@@ -128,7 +138,7 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
     }
   }
 
-  void _proceedToCheckout() {
+  Future<void> _proceedToCheckout() async {
     if (widget.cartProducts.isEmpty) {
       ProfessionalErrorHandler.showWarning(
         context: context,
@@ -138,47 +148,115 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
       return;
     }
 
-    Navigator.push(
-      context,
-      ProfessionalAnimations.createSlideRoute(
-        OdemeSayfasi(
-          cartProducts: widget.cartProducts,
-          appliedCoupon: _appliedCoupon,
-          couponDiscount: _couponDiscount,
-          isCouponApplied: _isCouponApplied,
-        ),
-      ),
-    );
+    setState(() => _isLoading = true);
+
+    try {
+      // Kullanıcı bilgilerini al
+      final userProfile = await _firebaseDataService.getUserProfile();
+      
+      // Sipariş oluştur
+      final orderId = await _orderService.createOrder(
+        products: widget.cartProducts,
+        totalAmount: _total,
+        customerName: userProfile?['fullName'] ?? 'Müşteri',
+        customerEmail: userProfile?['email'] ?? 'musteri@example.com',
+        customerPhone: userProfile?['phone'] ?? '555-0123',
+        shippingAddress: userProfile?['address'] ?? 'Adres bilgisi',
+        paymentMethod: 'Kredi Kartı',
+        notes: _appliedCoupon.isNotEmpty ? 'Kupon: $_appliedCoupon' : null,
+      );
+
+      // Sepeti temizle
+      for (final product in widget.cartProducts) {
+        await _firebaseDataService.removeFromCart(product.id);
+      }
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        
+        ProfessionalErrorHandler.showSuccess(
+          context: context,
+          title: 'Sipariş Oluşturuldu!',
+          message: 'Siparişiniz başarıyla oluşturuldu. Sipariş No: $orderId',
+        );
+
+        // Ödeme sayfasına yönlendir
+        Navigator.push(
+          context,
+          ProfessionalAnimations.createSlideRoute(
+            OdemeSayfasi(
+              cartProducts: widget.cartProducts,
+              appliedCoupon: _appliedCoupon,
+              couponDiscount: _couponDiscount,
+              isCouponApplied: _isCouponApplied,
+              orderId: orderId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ProfessionalErrorHandler.showError(
+          context: context,
+          title: 'Sipariş Hatası',
+          message: 'Sipariş oluşturulurken hata oluştu: $e',
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      appBar: ProfessionalComponents.createAppBar(
-        title: 'Sepetim',
+      appBar: AppBar(
+        title: const Text('Sepetim'),
+        backgroundColor: Colors.blue[600],
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // Ana sayfaya geri dön
+            _navigateToMainPage();
+          },
+        ),
         actions: [
           if (widget.cartProducts.isNotEmpty)
             TextButton(
               onPressed: () {
                 _showClearCartDialog();
               },
-              child: const Text('Temizle'),
+              child: const Text(
+                'Temizle',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
         ],
       ),
       body: widget.cartProducts.isEmpty
-          ? _buildEmptyCart()
-          : Column(
-              children: [
-                // Ürün listesi
-                Expanded(
-                  child: _buildProductList(),
-                ),
-                
-                // Özet ve ödeme
-                _buildOrderSummary(),
-              ],
+          ? NoOverflow(
+              child: _buildEmptyCart(),
+            )
+          : SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Column(
+                    children: [
+                      // Ürün listesi - Scrollable olmalı
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildProductList(),
+                        ),
+                      ),
+                      // Özet ve ödeme - Sabit kalmalı
+                      _buildOrderSummary(),
+                    ],
+                  );
+                },
+              ),
             ),
     );
   }
@@ -190,10 +268,21 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
       icon: Icons.shopping_cart_outlined,
       buttonText: 'Alışverişe Başla',
       onButtonPressed: () {
-        // Ana sayfaya yönlendirme
-        Navigator.pop(context);
+        // Ana sayfaya yönlendirme - Bottom navigation'ı ana sayfaya (index 0) ayarla
+        _navigateToMainPage();
       },
     );
+  }
+
+  void _navigateToMainPage() {
+    // Ana sayfaya yönlendirme için bottom navigation'ı kullan
+    // MainScreen'deki _onItemTapped(0) metodunu çağır
+    if (widget.onNavigateToMainPage != null) {
+      widget.onNavigateToMainPage!();
+    } else {
+      // Fallback: Ana sayfaya geri dön
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Widget _buildProductList() {
@@ -206,56 +295,62 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
 
   Widget _buildProductCard(Product product) {
     return ProfessionalComponents.createCard(
-      margin: const EdgeInsets.all(8),
+      margin: const EdgeInsets.all(6), // Daha küçük margin
       child: Row(
         children: [
           // Ürün resmi
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             child: OptimizedImage(
               imageUrl: product.imageUrl,
-              width: 80,
-              height: 80,
+              width: 60, // Daha küçük resim
+              height: 60, // Daha küçük resim
             ),
           ),
           
-          const SizedBox(width: 12),
+          const SizedBox(width: 8), // Daha küçük spacing
           
           // Ürün bilgileri
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   product.name,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 14, // Daha küçük font
                     fontWeight: FontWeight.w600,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 
-                const SizedBox(height: 4),
+                const SizedBox(height: 2), // Daha küçük spacing
                 
                 Text(
                   '${product.price.toStringAsFixed(2)} ₺',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 12, // Daha küçük font
                     fontWeight: FontWeight.bold,
                     color: Colors.green,
                   ),
                 ),
                 
-                const SizedBox(height: 8),
+                const SizedBox(height: 4), // Daha küçük spacing
                 
                 // Miktar kontrolü
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       onPressed: () => _updateProductQuantity(product, product.quantity - 1),
                       icon: const Icon(Icons.remove_circle_outline),
                       iconSize: 20,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -275,6 +370,10 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
                       onPressed: () => _updateProductQuantity(product, product.quantity + 1),
                       icon: const Icon(Icons.add_circle_outline),
                       iconSize: 20,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                     ),
                   ],
                 ),
@@ -319,6 +418,7 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Kupon kodu
           _buildCouponSection(),

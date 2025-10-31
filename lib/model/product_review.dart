@@ -53,6 +53,28 @@ class ProductReview {
     );
   }
 
+  // Map'ten oluşturma (Firebase için)
+  factory ProductReview.fromMap(Map<String, dynamic> map) {
+    return ProductReview(
+      id: map['id'] ?? '',
+      productId: map['productId'] ?? '',
+      userId: map['userId'] ?? '',
+      userName: map['userName'] ?? '',
+      userEmail: map['userEmail'] ?? '',
+      rating: map['rating'] ?? 0,
+      comment: map['comment'] ?? '',
+      imageUrls: (map['imageUrls'] as List<dynamic>?)?.cast<String>() ?? [],
+      createdAt: DateTime.parse(map['createdAt'] ?? DateTime.now().toIso8601String()),
+      updatedAt: DateTime.parse(map['updatedAt'] ?? DateTime.now().toIso8601String()),
+      isApproved: map['isApproved'] ?? false,
+      adminResponse: map['adminResponse'],
+      adminResponseDate: map['adminResponseDate'] != null 
+          ? DateTime.parse(map['adminResponseDate']) 
+          : null,
+      isEdited: map['isEdited'] ?? false,
+    );
+  }
+
   // ProductReview'ı JSON'a çevir
   Map<String, dynamic> toJson() {
     return {

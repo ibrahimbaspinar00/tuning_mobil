@@ -90,6 +90,8 @@ class ProfessionalTheme {
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ),
       
@@ -104,6 +106,8 @@ class ProfessionalTheme {
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ),
       
@@ -117,6 +121,8 @@ class ProfessionalTheme {
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ),
       

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/no_overflow.dart';
 import '../model/product.dart';
 import '../services/admin_service.dart';
 import '../services/user_auth_service.dart';
@@ -13,6 +14,7 @@ class OdemeSayfasi extends StatefulWidget {
   final String appliedCoupon;
   final double couponDiscount;
   final bool isCouponApplied;
+  final String? orderId;
 
   const OdemeSayfasi({
     super.key,
@@ -20,6 +22,7 @@ class OdemeSayfasi extends StatefulWidget {
     this.appliedCoupon = '',
     this.couponDiscount = 0.0,
     this.isCouponApplied = false,
+    this.orderId,
   });
 
   @override
@@ -345,20 +348,17 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 600,
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+        : NoOverflow(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                     // Kullanıcı Durumu Bilgisi
                     _buildUserStatusInfo(),
                     const SizedBox(height: 16),
@@ -398,10 +398,11 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
                   // Ödeme Butonu
                   _buildPaymentButton(),
                   const SizedBox(height: 16), // Extra space at bottom
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
           ),
     );
   }
@@ -584,7 +585,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
                           Text(
                             _appliedCoupon == 'FREESHIP' 
                                 ? 'Ücretsiz kargo kuponu uygulandı!'
-                                : '${(_couponDiscount * 100).toInt()}% İndirim kuponu uygulandı!',
+                                : '${(_couponDiscount.isFinite ? (_couponDiscount * 100).toInt() : 0)}% İndirim kuponu uygulandı!',
                             style: TextStyle(
                               color: Colors.green[700],
                               fontSize: 12,
@@ -648,8 +649,14 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
                               backgroundColor: reward.color,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            child: const Text('Kullan', style: TextStyle(fontSize: 12)),
+                            child: const Text(
+                              'Kullan', 
+                              style: TextStyle(fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
@@ -1225,12 +1232,14 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
       height: 50,
       child: ElevatedButton(
         onPressed: _isLoading ? null : _onPayPressed,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[600],
-                    foregroundColor: Colors.white,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green[600],
+          foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         child: _isLoading
           ? const SizedBox(
@@ -1244,6 +1253,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
           : const Text(
               'Siparişi Tamamla',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
             ),
       ),
     );

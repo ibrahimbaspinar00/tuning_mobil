@@ -319,7 +319,7 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
               ...order.products.map((product) => Padding(
                 padding: const EdgeInsets.only(left: 16, bottom: 2),
                 child: Text(
-                  '• ${product['name']} x${product['quantity']}',
+                  '• ${product.name} x${product.quantity}',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey[600],
@@ -441,7 +441,7 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
               ...order.products.map((product) => Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '• ${product['name']} x${product['quantity']} - ${product['price']} TL',
+                  '• ${product.name} x${product.quantity} - ${product.price} TL',
                 ),
               )),
             ],

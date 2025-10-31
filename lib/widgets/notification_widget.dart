@@ -25,6 +25,7 @@ class _NotificationWidgetState extends State<NotificationWidget>
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
   late Animation<double> _fadeAnimation;
+  NavigatorState? _navigator;
 
   @override
   void initState() {
@@ -61,6 +62,13 @@ class _NotificationWidgetState extends State<NotificationWidget>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store Navigator reference safely
+    _navigator = Navigator.of(context, rootNavigator: false);
+  }
+
+  @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
@@ -68,8 +76,13 @@ class _NotificationWidgetState extends State<NotificationWidget>
 
   void _dismiss() {
     _animationController.reverse().then((_) {
-      if (mounted) {
-        Navigator.of(context).pop();
+      if (mounted && _navigator != null) {
+        try {
+          _navigator!.pop();
+        } catch (e) {
+          // Navigator already popped or widget disposed
+          debugPrint('Error dismissing notification: $e');
+        }
       }
     });
   }

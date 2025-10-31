@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../model/product.dart';
 import '../model/product_review.dart';
+import '../model/collection.dart';
 import '../services/review_service.dart';
+import '../services/collection_service.dart';
 import '../widgets/optimized_image.dart';
 import '../widgets/star_rating.dart';
 import '../widgets/review_form.dart';
@@ -12,6 +14,7 @@ class UrunDetaySayfasi extends StatefulWidget {
   final Product product;
   final Function(Product) onFavoriteToggle;
   final Function(Product) onAddToCart;
+  final Function(Product) onRemoveFromCart;
   final List<Product> favoriteProducts;
   final List<Product> cartProducts;
 
@@ -20,6 +23,7 @@ class UrunDetaySayfasi extends StatefulWidget {
     required this.product,
     required this.onFavoriteToggle,
     required this.onAddToCart,
+    required this.onRemoveFromCart,
     required this.favoriteProducts,
     required this.cartProducts,
   });
@@ -34,11 +38,34 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
   int _totalReviews = 0;
   bool _isLoading = true;
   ProductReview? _userReview;
+  List<Collection> _collections = [];
+  bool _isLoadingCollections = false;
+  ScaffoldMessengerState? _scaffoldMessenger;
 
   @override
   void initState() {
     super.initState();
     _loadReviews();
+    _loadCollections();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store ScaffoldMessenger reference safely
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
+  }
+
+  /// Safely shows a SnackBar, checking if widget is mounted and context is valid
+  void _showSnackBar(SnackBar snackBar) {
+    if (mounted && _scaffoldMessenger != null) {
+      try {
+        _scaffoldMessenger!.showSnackBar(snackBar);
+      } catch (e) {
+        // Context is deactivated, silently ignore
+        debugPrint('Error showing snackbar: $e');
+      }
+    }
   }
 
   Future<void> _loadReviews() async {
@@ -63,7 +90,7 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(content: Text('Yorumlar yüklenirken hata oluştu: $e')),
         );
       }
@@ -72,6 +99,91 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
 
   Future<void> _onReviewAdded() async {
     await _loadReviews();
+  }
+
+  Future<void> _loadCollections() async {
+    if (!mounted) return;
+    setState(() => _isLoadingCollections = true);
+    
+    try {
+      final collections = await CollectionService().getUserCollections();
+      if (!mounted) return;
+      setState(() {
+        _collections = collections;
+        _isLoadingCollections = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingCollections = false);
+    }
+  }
+
+  Future<void> _addToCollection(Collection collection) async {
+    try {
+      // Ürünün imageUrl'ini geçerek, eğer koleksiyon boşsa kapak fotoğrafı olarak ayarlansın
+      await CollectionService().addProductToCollection(
+        collection.id, 
+        widget.product.id,
+        productImageUrl: widget.product.imageUrl,
+      );
+      if (!mounted) return;
+      
+      _showSnackBar(
+        SnackBar(
+          content: Text('${widget.product.name} ${collection.name} koleksiyonuna eklendi!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar(
+        SnackBar(
+          content: Text('Hata: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showAddToCollectionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Koleksiyona Ekle'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: _isLoadingCollections
+              ? const Center(child: CircularProgressIndicator())
+              : _collections.isEmpty
+                  ? const Center(
+                      child: Text('Henüz koleksiyonunuz yok.\nÖnce koleksiyon oluşturun.'),
+                    )
+                  : ListView.builder(
+                      itemCount: _collections.length,
+                      itemBuilder: (context, index) {
+                        final collection = _collections[index];
+                        return ListTile(
+                          leading: const Icon(Icons.collections_bookmark),
+                          title: Text(collection.name),
+                          subtitle: Text(collection.description),
+                          trailing: Text('${collection.productIds.length} ürün'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _addToCollection(collection);
+                          },
+                        );
+                      },
+                    ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _checkIfUserPurchased() {
@@ -102,6 +214,14 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Koleksiyon butonu
+          IconButton(
+            onPressed: _showAddToCollectionDialog,
+            icon: const Icon(
+              Icons.collections_bookmark,
+              color: Colors.white,
+            ),
+          ),
           // Favori butonu
           IconButton(
             onPressed: () => widget.onFavoriteToggle(widget.product),
@@ -149,6 +269,7 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               // Ürün resmi
               Container(
@@ -191,6 +312,7 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Ürün adı
                     Text(
@@ -257,47 +379,71 @@ class _UrunDetaySayfasiState extends State<UrunDetaySayfasi> {
                     const SizedBox(height: 24),
                     
                     // Aksiyon butonları
-                    Row(
+                    Column(
                       children: [
-                        // Favori butonu
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => widget.onFavoriteToggle(widget.product),
-                            icon: Icon(
-                              isFavorite ? Icons.favorite : Icons.favorite_border,
-                              size: isSmallScreen ? 18 : 20,
-                            ),
-                            label: Text(
-                              isFavorite ? 'Favorilerde' : 'Favorilere Ekle',
-                              style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isFavorite ? Colors.red[400] : Colors.grey[200],
-                              foregroundColor: isFavorite ? Colors.white : Colors.grey[700],
-                              padding: EdgeInsets.symmetric(
-                                vertical: isSmallScreen ? 12 : 16,
+                        Row(
+                          children: [
+                            // Favori butonu
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => widget.onFavoriteToggle(widget.product),
+                                icon: Icon(
+                                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                                  size: isSmallScreen ? 18 : 20,
+                                ),
+                                label: Text(
+                                  isFavorite ? 'Favorilerde' : 'Favorilere Ekle',
+                                  style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isFavorite ? Colors.red[400] : Colors.grey[200],
+                                  foregroundColor: isFavorite ? Colors.white : Colors.grey[700],
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: isSmallScreen ? 12 : 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                            ),
+                            const SizedBox(width: 12),
+                            // Sepete ekle butonu
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => widget.onAddToCart(widget.product),
+                                icon: Icon(
+                                  inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                                  size: isSmallScreen ? 18 : 20,
+                                ),
+                                label: Text(
+                                  inCart ? 'Sepette' : 'Sepete Ekle',
+                                  style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: inCart ? Colors.green[400] : Colors.blue[600],
+                                  foregroundColor: Colors.white,
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: isSmallScreen ? 12 : 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        // Sepete ekle butonu
-                        Expanded(
+                        const SizedBox(height: 12),
+                        // Koleksiyona ekle butonu
+                        SizedBox(
+                          width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: () => widget.onAddToCart(widget.product),
-                            icon: Icon(
-                              inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
-                              size: isSmallScreen ? 18 : 20,
-                            ),
-                            label: Text(
-                              inCart ? 'Sepette' : 'Sepete Ekle',
-                              style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
-                            ),
+                            onPressed: _showAddToCollectionDialog,
+                            icon: const Icon(Icons.collections_bookmark),
+                            label: const Text('Koleksiyona Ekle'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: inCart ? Colors.green[400] : Colors.blue[600],
+                              backgroundColor: Colors.purple[600],
                               foregroundColor: Colors.white,
                               padding: EdgeInsets.symmetric(
                                 vertical: isSmallScreen ? 12 : 16,

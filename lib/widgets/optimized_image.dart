@@ -84,8 +84,8 @@ class _OptimizedImageState extends State<OptimizedImage> with AutomaticKeepAlive
         errorBuilder: (context, error, stackTrace) {
           return _buildErrorWidget();
         },
-        cacheWidth: widget.width?.toInt(),
-        cacheHeight: widget.height?.toInt(),
+        cacheWidth: widget.width != null && widget.width!.isFinite ? widget.width!.toInt() : null,
+        cacheHeight: widget.height != null && widget.height!.isFinite ? widget.height!.toInt() : null,
       );
     } else if (widget.imageUrl.startsWith('http')) {
       return CachedNetworkImage(
@@ -99,8 +99,8 @@ class _OptimizedImageState extends State<OptimizedImage> with AutomaticKeepAlive
         },
         fadeInDuration: const Duration(milliseconds: 200),
         fadeOutDuration: const Duration(milliseconds: 100),
-        memCacheWidth: widget.width?.toInt(),
-        memCacheHeight: widget.height?.toInt(),
+        memCacheWidth: widget.width != null && widget.width!.isFinite ? widget.width!.toInt() : null,
+        memCacheHeight: widget.height != null && widget.height!.isFinite ? widget.height!.toInt() : null,
         maxWidthDiskCache: 800,
         maxHeightDiskCache: 800,
         useOldImageOnUrlChange: true,
