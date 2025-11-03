@@ -8,14 +8,15 @@ import '../model/product.dart';
 import '../model/order.dart';
 import '../providers/theme_provider.dart';
 import '../services/firebase_data_service.dart';
-import 'profil_bilgileri_sayfasi.dart';
+import '../services/order_service.dart';
 import 'adres_yonetimi_sayfasi.dart';
 import 'odeme_yontemleri_sayfasi.dart';
 import 'bildirim_ayarlari_sayfasi.dart';
-import 'giris_sayfasi.dart';
+import '../config/app_routes.dart';
 import 'siparisler_sayfasi.dart';
 import 'favoriler_sayfasi.dart';
 import 'sepetim_sayfasi.dart';
+import 'profil_duzenleme_sayfasi.dart';
 
 class ProfilSayfasi extends StatefulWidget {
   final List<Product> favoriteProducts;
@@ -169,6 +170,7 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
         return Scaffold(
+          resizeToAvoidBottomInset: false, // Klavye performansı için
           body: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -334,12 +336,7 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                                   ),
                                   child: ElevatedButton.icon(
                                     onPressed: _auth.currentUser == null ? () async {
-                                      await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => const GirisSayfasi(),
-                                        ),
-                                      );
+                                      await AppRoutes.navigateToLogin(context);
                                       // Giriş sayfasından döndükten sonra kullanıcı bilgilerini yeniden yükle
                                       if (mounted) {
                                         await _loadUserData();
@@ -347,14 +344,7 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                                     } : () async {
                                       await _auth.signOut();
                                       if (mounted) {
-                                        setState(() {
-                                          _fullName = null;
-                                          _username = null;
-                                          _email = null;
-                                          _phone = null;
-                                          _address = null;
-                                          _profileImageUrl = null;
-                                        });
+                                        AppRoutes.navigateToMain(context);
                                       }
                                     },
                                     style: ElevatedButton.styleFrom(
@@ -413,26 +403,6 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                             children: [
                               Expanded(
                                 child: _buildStatCard(
-                                  icon: Icons.shopping_bag,
-                                  title: 'Toplam Sipariş',
-                                  value: '${_userStats['totalOrders'] ?? 0}',
-                                  color: Colors.blue,
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => SiparislerSayfasi(
-                                          orders: widget.orders,
-                                          onOrderPlaced: widget.onOrderPlaced,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
                                   icon: Icons.favorite,
                                   title: 'Favori Ürün',
                                   value: '${_userStats['favoriteCount'] ?? 0}',
@@ -452,11 +422,7 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                                   },
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: _buildStatCard(
                                   icon: Icons.shopping_cart,
@@ -486,15 +452,7 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                                   value: '${(_userStats['totalSpent'] ?? 0.0).toStringAsFixed(2)} TL',
                                   color: Colors.orange,
                                   onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => SiparislerSayfasi(
-                                          orders: widget.orders,
-                                          onOrderPlaced: widget.onOrderPlaced,
-                                        ),
-                                      ),
-                                    );
+                                    _openOrdersPage();
                                   },
                                 ),
                               ),
@@ -534,16 +492,26 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                           ),
                           const SizedBox(height: 20),
                           _buildAccountTile(
+                            icon: Icons.receipt_long,
+                            title: 'Siparişlerim',
+                            subtitle: 'Tüm geçmiş ve aktif siparişler',
+                            onTap: _openOrdersPage,
+                          ),
+                          _buildAccountTile(
                             icon: Icons.person,
                             title: 'Profil Bilgileri',
                             subtitle: 'Ad, soyad, e-posta düzenle',
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              final result = await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const ProfilBilgileriSayfasi(),
+                                  builder: (context) => const ProfilDuzenlemeSayfasi(),
                                 ),
                               );
+                              // Profil güncellendiyse verileri yeniden yükle
+                              if (result == true) {
+                                _loadUserData();
+                              }
                             },
                           ),
                           _buildAccountTile(
@@ -940,6 +908,33 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
     // Dil değiştirme özelliği kaldırıldı
   }
 
+  Future<void> _openOrdersPage() async {
+    try {
+      final orders = await OrderService().getUserOrders();
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SiparislerSayfasi(
+            orders: orders,
+            onOrderPlaced: widget.onOrderPlaced,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SiparislerSayfasi(
+            orders: widget.orders,
+            onOrderPlaced: widget.onOrderPlaced,
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildAccountTile({
     required IconData icon,
     required String title,
@@ -995,23 +990,27 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
   }
 
   void _showLogoutDialog() {
+    final parentContext = context;
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('Çıkış Yap'),
           content: const Text('Hesabınızdan çıkış yapmak istediğinizden emin misiniz?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('İptal'),
             ),
             ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Çıkış yapıldı')),
-                );
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                try {
+                  await _auth.signOut();
+                } catch (_) {}
+                if (mounted) {
+                  AppRoutes.navigateToMain(parentContext);
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red[600],

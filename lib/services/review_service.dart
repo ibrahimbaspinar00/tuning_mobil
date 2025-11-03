@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../model/product_review.dart';
 
 class ReviewService {
@@ -10,30 +11,51 @@ class ReviewService {
   // Ürün için tüm yorumları getir
   static Future<List<ProductReview>> getProductReviews(String productId) async {
     try {
-      final querySnapshot = await _firestore
+      debugPrint('=== YORUMLAR GETİRİLİYOR ===');
+      debugPrint('Product ID: $productId');
+      
+      // Önce tüm yorumları getir (isApproved kontrolü olmadan)
+      // Source.server kullanarak cache'i bypass et (yeni yorumlar için)
+      final allReviewsSnapshot = await _firestore
           .collection(_collectionName)
           .where('productId', isEqualTo: productId)
-          .where('isApproved', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .get();
+          .get(const GetOptions(source: Source.server));
 
-      final reviews = querySnapshot.docs
-          .map((doc) => ProductReview.fromJson({
-                'id': doc.id,
-                ...doc.data(),
-              }))
+      debugPrint('Toplam yorum sayısı (onaysız dahil): ${allReviewsSnapshot.docs.length}');
+
+      // Sonra memory'de filtrele (composite index sorununu önlemek için)
+      final allReviews = allReviewsSnapshot.docs
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>? ?? {};
+            debugPrint('Review ID: ${doc.id}, isApproved: ${data['isApproved']}');
+            return ProductReview.fromJson({
+              'id': doc.id,
+              ...data,
+            });
+          })
           .toList();
 
-      // Eğer hiç yorum yoksa demo yorumlar ekle
-      if (reviews.isEmpty) {
-        return _getDemoReviews(productId);
-      }
+      // isApproved olanları filtrele
+      final approvedReviews = allReviews.where((review) => review.isApproved == true).toList();
+      
+      // createdAt'e göre sırala
+      approvedReviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      return reviews;
-    } catch (e) {
-      print('Yorumlar getirilirken hata oluştu: $e');
-      // Hata durumunda da demo yorumlar döndür
-      return _getDemoReviews(productId);
+      debugPrint('Onaylı yorum sayısı: ${approvedReviews.length}');
+
+      // Demo yorumları kaldır - sadece gerçek yorumları göster
+      // if (approvedReviews.isEmpty) {
+      //   debugPrint('Hiç onaylı yorum yok, demo yorumlar döndürülüyor');
+      //   return _getDemoReviews(productId);
+      // }
+
+      debugPrint('✓ Yorumlar başarıyla getirildi: ${approvedReviews.length} adet');
+      return approvedReviews;
+    } catch (e, stackTrace) {
+      debugPrint('✗ Yorumlar getirilirken hata oluştu: $e');
+      debugPrint('Stack trace: $stackTrace');
+      // Hata durumunda boş liste döndür (demo yorumlar kaldırıldı)
+      return [];
     }
   }
 
@@ -126,12 +148,13 @@ class ReviewService {
   // Kullanıcının bir ürün için yorumunu getir
   static Future<ProductReview?> getUserReviewForProduct(String productId, String userId) async {
     try {
+      // Source.server kullanarak cache'i bypass et (yeni yorumlar için)
       final querySnapshot = await _firestore
           .collection(_collectionName)
           .where('productId', isEqualTo: productId)
           .where('userId', isEqualTo: userId)
           .limit(1)
-          .get();
+          .get(const GetOptions(source: Source.server));
 
       if (querySnapshot.docs.isNotEmpty) {
         final doc = querySnapshot.docs.first;
@@ -142,34 +165,57 @@ class ReviewService {
       }
       return null;
     } catch (e) {
-      print('Kullanıcı yorumu getirilirken hata oluştu: $e');
+      debugPrint('Kullanıcı yorumu getirilirken hata oluştu: $e');
       return null;
     }
   }
 
-  // Kullanıcının ürünü satın alıp almadığını kontrol et
+  // Kullanıcının ürünü satın alıp almadığını kontrol et (OrderService kullanarak)
   static Future<bool> hasUserPurchasedProduct(String productId, String userId) async {
+    try {
+      // OrderService kullanarak kontrol et
+      // Not: Bu metod OrderService'den çağrılabilir ama static metod olduğu için
+      // direkt olarak OrderService'i import edip kullanacağız
+      return await _checkUserPurchaseFromOrders(productId, userId);
+    } catch (e) {
+      debugPrint('Satın alma kontrolü yapılırken hata: $e');
+      return false;
+    }
+  }
+
+  // OrderService'den bağımsız kontrol metodu
+  static Future<bool> _checkUserPurchaseFromOrders(String productId, String userId) async {
     try {
       final querySnapshot = await _firestore
           .collection('orders')
           .where('userId', isEqualTo: userId)
-          .where('status', isEqualTo: 'completed')
           .get();
 
       for (var doc in querySnapshot.docs) {
         final orderData = doc.data();
-        final products = orderData['products'] as List<dynamic>?;
-        if (products != null) {
-          for (var product in products) {
-            if (product['productId'] == productId) {
-              return true;
+        final status = orderData['status']?.toString().toLowerCase() ?? '';
+        
+        // Sadece teslim edilmiş veya onaylanmış siparişlerde kontrol yap
+        if (status == 'delivered' || 
+            status == 'teslim edildi' ||
+            status == 'confirmed' ||
+            status == 'onaylandı') {
+          final products = orderData['products'] as List<dynamic>?;
+          if (products != null) {
+            for (var product in products) {
+              // Product objesi olabilir veya Map olabilir
+              if (product is Map<String, dynamic>) {
+                if (product['id'] == productId || product['productId'] == productId) {
+                  return true;
+                }
+              }
             }
           }
         }
       }
       return false;
     } catch (e) {
-      print('Satın alma kontrolü yapılırken hata: $e');
+      debugPrint('Satın alma kontrolü yapılırken hata: $e');
       return false;
     }
   }
@@ -187,11 +233,16 @@ class ReviewService {
         throw Exception('Kullanıcı giriş yapmamış');
       }
 
-      // Demo için satın alma kontrolünü atla
-      // final hasPurchased = await hasUserPurchasedProduct(productId, user.uid);
-      // if (!hasPurchased) {
-      //   throw Exception('Bu ürünü satın almadığınız için yorum yapamazsınız');
-      // }
+      // Satın alma kontrolü - sadece sipariş verilen ürünlere yorum yapılabilir
+      debugPrint('Satın alma kontrolü yapılıyor...');
+      final hasPurchased = await hasUserPurchasedProduct(productId, user.uid);
+      debugPrint('Satın alma durumu: $hasPurchased');
+      
+      if (!hasPurchased) {
+        throw Exception('Bu ürünü satın almadığınız için yorum yapamazsınız. Lütfen önce ürünü satın alın.');
+      }
+      
+      debugPrint('✓ Satın alma kontrolü geçildi');
 
       // Kullanıcının daha önce bu ürün için yorum yapıp yapmadığını kontrol et
       final existingReview = await getUserReviewForProduct(productId, user.uid);
@@ -199,29 +250,76 @@ class ReviewService {
         throw Exception('Bu ürün için zaten yorum yapmışsınız');
       }
 
-      final review = ProductReview(
-        id: '', // Firestore otomatik ID oluşturacak
-        productId: productId,
-        userId: user.uid,
-        userName: user.displayName ?? 'Anonim Kullanıcı',
-        userEmail: user.email ?? '',
-        rating: rating,
-        comment: comment,
-        imageUrls: imageUrls ?? [],
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        isApproved: false, // Admin onayı bekliyor
-        isEdited: false,
-      );
+      // Firestore'da review oluştur ve ID al
+      final reviewData = {
+        'productId': productId,
+        'userId': user.uid,
+        'userName': user.displayName ?? 'Anonim Kullanıcı',
+        'userEmail': user.email ?? '',
+        'rating': rating,
+        'comment': comment,
+        'imageUrls': imageUrls ?? [],
+        'createdAt': Timestamp.now(),
+        'updatedAt': Timestamp.now(),
+        'isApproved': true, // Direkt onaylı olarak yayınla
+        'isEdited': false,
+      };
 
-      final docRef = await _firestore.collection(_collectionName).add(review.toJson());
+      debugPrint('Firestore\'a yorum ekleniyor...');
+      debugPrint('Review Data: ${reviewData.toString()}');
       
-      // Ürünün ortalama rating'ini güncelle
-      await _updateProductRating(productId);
+      // Firestore'a ekle
+      final docRef = await _firestore.collection(_collectionName).add(reviewData);
+      final reviewId = docRef.id;
       
-      return docRef.id;
+      debugPrint('✓ Yorum Firestore\'a eklendi! Review ID: $reviewId');
+      
+      // Eklenen yorumu hemen doğrula (Source.server ile - retry mekanizması ile)
+      debugPrint('Eklenen yorum doğrulanıyor (Source.server - max 3 deneme)...');
+      DocumentSnapshot? addedDoc;
+      
+      // Max 3 kez dene (Firestore propagation için)
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        await Future.delayed(Duration(milliseconds: attempt * 300));
+        try {
+          addedDoc = await _firestore.collection(_collectionName).doc(reviewId).get(
+            const GetOptions(source: Source.server),
+          );
+          
+          if (addedDoc.exists) {
+            debugPrint('✓ Yorum doğrulandı (deneme $attempt/3)');
+            break;
+          } else {
+            debugPrint('⚠ Deneme $attempt/3: Yorum henüz görünmüyor...');
+          }
+        } catch (e) {
+          debugPrint('⚠ Deneme $attempt/3 hatası: $e');
+          if (attempt == 3) rethrow;
+        }
+      }
+      
+      if (addedDoc == null || !addedDoc.exists) {
+        debugPrint('✗ UYARI: Yorum 3 denemede de görünmedi!');
+        debugPrint('⚠ Yine de devam ediliyor, belki sonra görünür...');
+        // Yine de reviewId döndür (belki sonra görünür)
+      } else {
+        final addedData = addedDoc.data()! as Map<String, dynamic>;
+        debugPrint('✓ Eklenen yorum doğrulandı:');
+        debugPrint('  - ID: $reviewId');
+        debugPrint('  - Product ID: ${addedData['productId']}');
+        debugPrint('  - isApproved: ${addedData['isApproved']}');
+        debugPrint('  - Rating: ${addedData['rating']}');
+        debugPrint('  - ImageUrls: ${(addedData['imageUrls'] as List?)?.length ?? 0} adet');
+      }
+      
+      // Ürünün ortalama rating'ini güncelle (async - blocking yapma)
+      _updateProductRating(productId).catchError((e) {
+        debugPrint('Rating güncelleme hatası (non-blocking): $e');
+      });
+      
+      return reviewId;
     } catch (e) {
-      print('Yorum eklenirken hata oluştu: $e');
+      debugPrint('Yorum eklenirken hata oluştu: $e');
       rethrow;
     }
   }
@@ -250,10 +348,10 @@ class ReviewService {
         throw Exception('Bu yorumu düzenleme yetkiniz yok');
       }
 
-      final updateData = {
+      final updateData = <String, dynamic>{
         'rating': rating,
         'comment': comment,
-        'updatedAt': DateTime.now().toIso8601String(),
+        'updatedAt': Timestamp.now(),
         'isEdited': true,
       };
 
@@ -271,7 +369,48 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('Yorum güncellenirken hata oluştu: $e');
+      debugPrint('Yorum güncellenirken hata oluştu: $e');
+      return false;
+    }
+  }
+
+  // Sadece fotoğraf URL'lerini güncelle
+  static Future<bool> updateReviewImages({
+    required String reviewId,
+    required List<String> imageUrls,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('Kullanıcı giriş yapmamış');
+      }
+
+      // Yorumun kullanıcıya ait olup olmadığını kontrol et (Source.server ile)
+      final reviewDoc = await _firestore.collection(_collectionName).doc(reviewId).get(
+        const GetOptions(source: Source.server),
+      );
+      if (!reviewDoc.exists) {
+        throw Exception('Yorum bulunamadı');
+      }
+
+      final reviewData = reviewDoc.data()! as Map<String, dynamic>;
+      if (reviewData['userId'] != user.uid) {
+        throw Exception('Bu yorumu düzenleme yetkiniz yok');
+      }
+
+      // Sadece imageUrls'i güncelle
+      await _firestore.collection(_collectionName).doc(reviewId).update({
+        'imageUrls': imageUrls,
+        'updatedAt': Timestamp.now(),
+      });
+
+      debugPrint('✓ Yorum fotoğrafları güncellendi! Review ID: $reviewId');
+      debugPrint('  - Fotoğraf sayısı: ${imageUrls.length}');
+
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('✗ Yorum fotoğrafları güncellenirken hata oluştu: $e');
+      debugPrint('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -305,17 +444,19 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('Yorum silinirken hata oluştu: $e');
+      debugPrint('Yorum silinirken hata oluştu: $e');
       return false;
     }
   }
 
   // Admin: Yorum onayla/reddet
+  // Not: Yeni yorumlar otomatik olarak onaylı (isApproved: true) olarak ekleniyor
+  // Admin panelinde yorumları reddetmek veya tekrar onaylamak için kullanılabilir
   static Future<bool> approveReview(String reviewId, bool isApproved) async {
     try {
       await _firestore.collection(_collectionName).doc(reviewId).update({
         'isApproved': isApproved,
-        'updatedAt': DateTime.now().toIso8601String(),
+        'updatedAt': Timestamp.now(),
       });
 
       // Ürünün ortalama rating'ini güncelle
@@ -329,7 +470,7 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('Yorum onay durumu güncellenirken hata oluştu: $e');
+      debugPrint('Yorum onay durumu güncellenirken hata oluştu: $e');
       return false;
     }
   }
@@ -348,7 +489,7 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('Admin yanıtı eklenirken hata oluştu: $e');
+      debugPrint('Admin yanıtı eklenirken hata oluştu: $e');
       return false;
     }
   }
@@ -367,13 +508,16 @@ class ReviewService {
           .get();
 
       return querySnapshot.docs
-          .map((doc) => ProductReview.fromJson({
-                'id': doc.id,
-                ...doc.data() as Map<String, dynamic>,
-              }))
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>? ?? {};
+            return ProductReview.fromJson({
+              'id': doc.id,
+              ...data,
+            });
+          })
           .toList();
     } catch (e) {
-      print('Tüm yorumlar getirilirken hata oluştu: $e');
+      debugPrint('Tüm yorumlar getirilirken hata oluştu: $e');
       return [];
     }
   }
@@ -392,7 +536,7 @@ class ReviewService {
         'lastRatingUpdate': DateTime.now().toIso8601String(),
       });
     } catch (e) {
-      print('Ürün rating güncellenirken hata oluştu: $e');
+      debugPrint('Ürün rating güncellenirken hata oluştu: $e');
     }
   }
 
@@ -412,7 +556,7 @@ class ReviewService {
               }))
           .toList();
     } catch (e) {
-      print('Kullanıcı yorumları getirilirken hata oluştu: $e');
+      debugPrint('Kullanıcı yorumları getirilirken hata oluştu: $e');
       return [];
     }
   }
@@ -434,7 +578,7 @@ class ReviewService {
               })
           .toList();
     } catch (e) {
-      print('En çok yorum alan ürünler getirilirken hata oluştu: $e');
+      debugPrint('En çok yorum alan ürünler getirilirken hata oluştu: $e');
       return [];
     }
   }

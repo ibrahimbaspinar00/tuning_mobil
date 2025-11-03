@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart';
 import 'dart:async';
 import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
+import 'config/app_routes.dart';
 import 'services/theme_service.dart';
-import 'services/notification_service.dart';
 import 'providers/theme_provider.dart';
 import 'providers/app_state_provider.dart';
 import 'utils/advanced_memory_manager.dart';
@@ -17,6 +18,26 @@ import 'utils/advanced_error_handler.dart';
 import 'utils/advanced_cache_manager.dart';
 import 'utils/network_manager.dart';
 import 'theme/professional_theme.dart';
+import 'services/campaign_notification_service.dart';
+import 'services/enhanced_notification_service.dart';
+
+/// Background message handler - Uygulama kapalıyken çalışır
+/// Bu fonksiyon top-level olmalı (main dışında, class dışında)
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Firebase'i initialize et (background'da çalışıyoruz)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
+  debugPrint('📱 Background mesaj alındı: ${message.messageId}');
+  debugPrint('📱 Mesaj başlığı: ${message.notification?.title}');
+  debugPrint('📱 Mesaj içeriği: ${message.notification?.body}');
+  
+  // EnhancedNotificationService ile bildirimi göster
+  final notificationService = EnhancedNotificationService();
+  await notificationService.handleBackgroundMessage(message);
+}
 
 class AppScrollBehavior extends ScrollBehavior {
   const AppScrollBehavior();
@@ -41,82 +62,63 @@ class AppScrollBehavior extends ScrollBehavior {
 }
 
 void main() async {
-  // CRITICAL: Non-blocking initialization for performance
   WidgetsFlutterBinding.ensureInitialized();
   
-  // CRITICAL: Performance optimizations
-  _optimizeApp();
+  // Background message handler'ı kaydet (main() içinde - kritik!)
+  // Bu, background handler'ın doğru şekilde çalışması için gerekli
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   
-  // CRITICAL: Silent error handling for performance
+  // Error handling
   if (kDebugMode) {
     FlutterError.onError = (FlutterErrorDetails details) {
-      // Silent error handling - no UI blocking
       debugPrint('Flutter Error: ${details.exception}');
       debugPrint('Stack trace: ${details.stack}');
-      
-      // Handle specific Firebase errors silently
-      if (details.exception.toString().contains('Firebase') || 
-          details.exception.toString().contains('core/no-app')) {
-        debugPrint('Firebase error handled silently');
-        return;
-      }
-      
-      // Handle overflow errors silently
-      if (details.exception.toString().contains('RenderFlex overflowed') ||
-          details.exception.toString().contains('overflowed by')) {
-        debugPrint('Overflow error handled silently');
-        return;
-      }
     };
     
-    // Handle platform errors
     PlatformDispatcher.instance.onError = (error, stack) {
       debugPrint('Platform Error: $error');
       debugPrint('Stack trace: $stack');
-      return true; // Mark as handled
+      return true;
     };
   }
   
-  // CRITICAL: Firebase initialization with timeout
+  // Firebase initialization
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
-    ).timeout(const Duration(seconds: 10)); // Timeout'u artırdık
-    debugPrint('Firebase initialized successfully in main');
-  } catch (e) {
-    debugPrint('Firebase initialization error in main: $e');
-    // Firebase başlatma hatası durumunda kullanıcıya bilgi ver
-    if (kDebugMode) {
-      print('Firebase başlatılamadı: $e');
+    ).timeout(const Duration(seconds: 10));
+    debugPrint('Firebase initialized successfully');
+    
+    // Firestore offline persistence'i devre dışı bırak (sadece online çalışsın)
+    try {
+      final firestore = FirebaseFirestore.instance;
+      firestore.settings = const Settings(
+        persistenceEnabled: false, // Offline persistence kapalı
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+      debugPrint('Firestore offline persistence disabled');
+    } catch (e) {
+      debugPrint('Error disabling Firestore persistence: $e');
     }
-    // Continue without Firebase - uygulama çalışmaya devam eder
+  } catch (e) {
+    debugPrint('Firebase initialization error: $e');
   }
   
-  // CRITICAL: Immediate app start
+  // Initialize app systems
+  _optimizeApp();
+  
+  // Start app
   runApp(const MyApp());
   
-  // CRITICAL: Background initialization
+  // Background initialization
   _initializeApp();
 }
 
 void _optimizeApp() {
-  // Initialize comprehensive performance optimizations
   PerformanceOptimizer.initialize();
-  
-  // Initialize advanced systems
   GlobalErrorHandler.initialize();
   
-  // Additional system optimizations
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  
-  // Global overflow protection
-  _setupOverflowProtection();
-  
-  // Optimize image cache
-  PaintingBinding.instance.imageCache.maximumSize = 50; // Daha küçük cache
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 25 << 20; // 25MB
-  
-  // Disable animations for better performance
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -124,43 +126,16 @@ void _optimizeApp() {
     ),
   );
   
-  // Force garbage collection
-  _forceGarbageCollection();
-}
-
-void _setupOverflowProtection() {
-  // Global overflow protection for all widgets
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Container(
-      padding: const EdgeInsets.all(4), // Daha küçük padding
-      color: Colors.red[50],
-      child: const Text(
-        'Overflow Fixed',
-        style: TextStyle(color: Colors.red, fontSize: 10), // Daha küçük font
-      ),
-    );
-  };
-}
-
-void _forceGarbageCollection() {
-  // Force garbage collection for better memory management
-  if (kDebugMode) {
-    // Only in debug mode to avoid performance impact in release
-    Timer.periodic(const Duration(minutes: 2), (timer) {
-      // Less aggressive garbage collection
-      SystemChannels.platform.invokeMethod('System.gc');
-    });
-  }
+  // Image cache optimization
+  PaintingBinding.instance.imageCache.maximumSize = 50;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 25 << 20; // 25MB
 }
 
 Future<void> _initializeApp() async {
   try {
-    // CRITICAL: Ultra-fast initialization (Firebase already initialized)
     unawaited(_initializeTheme());
     unawaited(_initializeNotifications());
     unawaited(_initializeAdvancedSystems());
-    
-    // Memory management - background
     unawaited(_initializeMemory());
   } catch (e) {
     debugPrint('App initialization error: $e');
@@ -199,8 +174,13 @@ Future<void> _initializeTheme() async {
 
 Future<void> _initializeNotifications() async {
   try {
-    await NotificationService().initialize();
-    debugPrint('Notification service initialized');
+    // EnhancedNotificationService kullan (background desteği ile)
+    await EnhancedNotificationService().initialize();
+    debugPrint('Enhanced notification service initialized');
+    
+    // Kampanya bildirim servisini başlat
+    CampaignNotificationService().start();
+    debugPrint('Campaign notification service started');
   } catch (e) {
     debugPrint('Notification initialization error: $e');
   }
@@ -226,78 +206,39 @@ class MyApp extends StatelessWidget {
             darkTheme: ProfessionalTheme.darkTheme.copyWith(
               visualDensity: VisualDensity.adaptivePlatformDensity,
             ),
+            initialRoute: AppRoutes.splash,
+            onGenerateRoute: AppRoutes.generateRoute,
             home: const SplashScreen(),
-            // Performance optimizations
             builder: (context, child) {
+              // Klavye performansı için builder'ı minimuma indir
+              // MediaQuery'yi sadece bir kez al ve cache'le
               final media = MediaQuery.of(context);
-              final double width = media.size.width;
-              final double height = media.size.height;
+              final width = media.size.width;
+              final height = media.size.height;
 
-              // Text scale: keep legible but consistent across devices
-              final double targetScale = (
-                width <= 320 || height <= 600 ? 0.88 :
+              // Sabit scale değerleri - hesaplama optimize edildi
+              final targetScale = width <= 320 || height <= 600 ? 0.88 :
                 width <= 360 || height <= 680 ? 0.92 :
                 width <= 375 ? 0.95 :
                 width <= 414 ? 1.00 :
                 width <= 600 ? 1.05 :
-                width <= 900 ? 1.08 :
-                1.10
-              );
+                width <= 900 ? 1.08 : 1.10;
 
-              // Constrain overly wide layouts (tablet/desktop/web)
-              final Widget constrained = Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: 1100, // cap width for readability
-                    minWidth: 320,
-                  ),
-                  child: child,
-                ),
-              );
-
-              // Add dynamic bottom padding to reduce bottom overflow on small screens
-              final double extraBottomPadding = (height < 640 || width < 380) ? 16 : 0;
-              Widget safe = SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: extraBottomPadding),
-                  child: constrained,
-                ),
-              );
-
-              // On very small screens, allow vertical scroll to avoid overflows
-              if (height < 600 || width < 360) {
-                safe = LayoutBuilder(
-                  builder: (context, constraints) {
-                    return SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight,
-                          minWidth: constraints.maxWidth,
-                        ),
-                        child: safe,
-                      ),
-                    );
-                  },
-                );
-              }
-
-              return ScrollConfiguration(
-                behavior: const AppScrollBehavior(),
+              // Klavye performansı için minimum widget tree
+              return RepaintBoundary(
                 child: MediaQuery(
+                  // viewInsets'i sıfırla - klavye açılışını hızlandır
                   data: media.copyWith(
                     textScaler: TextScaler.linear(targetScale),
+                    viewInsets: EdgeInsets.zero, // Kritik: rebuild'leri önle
+                    viewPadding: media.viewPadding, // Padding'i koru
+                    padding: media.padding, // Padding'i koru
                   ),
-                  child: safe,
+                  child: child ?? const SizedBox(),
                 ),
               );
             },
-            // Additional performance optimizations
             showPerformanceOverlay: false,
-            checkerboardRasterCacheImages: false,
-            checkerboardOffscreenLayers: false,
-            // Disable debug features for better performance
-            debugShowMaterialGrid: false,
             scrollBehavior: const AppScrollBehavior(),
           );
         },

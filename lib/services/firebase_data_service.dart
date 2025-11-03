@@ -441,11 +441,10 @@ class FirebaseDataService {
     if (!_isUserLoggedIn) return {};
 
     try {
-      // Toplam sipariş sayısı
+      // Toplam sipariş sayısı - orders koleksiyonundan userId ile çek
       final ordersSnapshot = await _firestore
-          .collection('users')
-          .doc(_currentUserId)
           .collection('orders')
+          .where('userId', isEqualTo: _currentUserId)
           .get();
 
       // Toplam harcama

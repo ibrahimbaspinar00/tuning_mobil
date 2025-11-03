@@ -5,8 +5,7 @@ import '../model/product.dart';
 import '../services/product_service.dart';
 import '../widgets/optimized_image.dart';
 import '../widgets/professional_components.dart';
-import '../utils/professional_animations.dart';
-import 'urun_detay_sayfasi.dart';
+import '../config/app_routes.dart';
 import 'bildirimler_sayfasi.dart';
 
 class AnaSayfa extends StatefulWidget {
@@ -42,14 +41,13 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
   String _selectedCategory = 'Tümü';
   String _sortBy = 'Popülerlik';
   Timer? _searchDebounceTimer;
-  Timer? _autoScrollTimer;
   Timer? _updateTimer;
-  ScrollController _popularProductsScrollController = ScrollController();
-  int _currentPopularIndex = 0;
-  bool _isUserScrolling = false;
   
   // Services
   final ProductService _productService = ProductService();
+  
+  // Stream subscription for real-time updates
+  StreamSubscription<List<Product>>? _productsSubscription;
 
   final List<String> _categories = [
     'Tümü',
@@ -72,6 +70,7 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    // İlk yükleme için Stream'i başlat
     _loadProducts();
     _loadSpecialProducts();
     _startContinuousUpdates();
@@ -96,31 +95,40 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
     _searchDebounceTimer?.cancel();
     // Otomatik scroll kapatıldı
     _updateTimer?.cancel();
+    // Stream subscription'ı iptal et
+    _productsSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadProducts() async {
+  void _loadProducts() {
     if (!mounted) return;
     setState(() => _isLoading = true);
     
-    try {
-      // ProductService'den ürünleri yükle
-      final products = await _productService.getAllProducts();
-      
-      if (!mounted) return;
-      setState(() {
-        _allProducts = products;
-        _filteredProducts = List.from(products);
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading products: $e');
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      // Hata durumunda boş liste
-      _allProducts = [];
-      _filteredProducts = [];
-    }
+    // Önceki subscription'ı iptal et
+    _productsSubscription?.cancel();
+    
+    // Stream'den ürünleri dinle (anlık güncelleme)
+    _productsSubscription = _productService.getAllProductsStream().listen(
+      (products) {
+        if (!mounted) return;
+        setState(() {
+          _allProducts = products;
+          // Mevcut filtreleri uygula
+          _filterProducts();
+          _isLoading = false;
+        });
+      },
+      onError: (error) {
+        debugPrint('Error loading products stream: $error');
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          // Hata durumunda boş liste
+          _allProducts = [];
+          _filteredProducts = [];
+        });
+      },
+    );
   }
 
   Future<void> _loadSpecialProducts() async {
@@ -140,63 +148,12 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
     }
   }
 
-  void _startAutoScroll() {
-    _autoScrollTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (!mounted || _popularProducts.isEmpty) return;
-      
-      if (_popularProductsScrollController.hasClients) {
-        _currentPopularIndex = (_currentPopularIndex + 1) % _popularProducts.length;
-        
-        // ListView için doğru scroll pozisyonu hesaplama
-        final screenWidth = MediaQuery.of(context).size.width;
-        final isSmallScreen = screenWidth < 400;
-        final itemWidth = (screenWidth - (isSmallScreen ? 24 : 32)) / (isSmallScreen ? 2 : 3);
-        final spacing = 12.0;
-        
-        // Her item için scroll pozisyonunu hesapla
-        final scrollPosition = _currentPopularIndex * (itemWidth + spacing);
-        
-        // Daha hızlı ve belirgin animasyon
-        _popularProductsScrollController.animateTo(
-          scrollPosition,
-          duration: const Duration(milliseconds: 800),
-          curve: Curves.easeInOut,
-        );
-      }
-    });
-  }
-
   void _startContinuousUpdates() {
     _updateTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (!mounted) return;
       _loadSpecialProducts();
     });
   }
-
-  void _setupScrollListener() {
-    _popularProductsScrollController.addListener(() {
-      // Kullanıcı scroll yapıyorsa otomatik scroll'u durdur
-      if (_popularProductsScrollController.position.isScrollingNotifier.value) {
-        _isUserScrolling = true;
-        _autoScrollTimer?.cancel();
-        
-        // 5 saniye sonra otomatik scroll'u tekrar başlat
-        Timer(const Duration(seconds: 5), () {
-          if (mounted && !_isUserScrolling) {
-            _startAutoScroll();
-          }
-        });
-      } else {
-        // Scroll bittiğinde flag'i temizle
-        Timer(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            _isUserScrolling = false;
-          }
-        });
-      }
-    });
-  }
-
 
   void _performSearch(String query) {
     // Önceki timer'ı iptal et
@@ -285,7 +242,7 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false, // Klavye performansı için false
       appBar: ProfessionalComponents.createAppBar(
         title: 'Tuning Store',
         actions: [
@@ -340,57 +297,47 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final insets = MediaQuery.of(context).viewInsets;
-            return SingleChildScrollView(
-              padding: EdgeInsets.only(bottom: (insets.bottom > 0 ? insets.bottom : 0) + 16),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight,
-                  minWidth: constraints.maxWidth,
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(), // Daha smooth scroll
+          padding: const EdgeInsets.only(bottom: 16), // Sabit padding - klavye performansı için
+          child: Column(
+            children: [
+              // Arama ve Filtreler
+              _buildSearchAndFilters(),
+              
+              // Popüler Ürünler
+              if (!_isLoading) ...[
+                _buildSpecialProductsSection(),
+              ],
+              
+              // Ürün Listesi
+              if (_isLoading)
+                ProfessionalComponents.createLoadingIndicator(
+                  message: 'Ürünler yükleniyor...',
+                )
+              else if (_filteredProducts.isEmpty)
+                ProfessionalComponents.createEmptyState(
+                  title: 'Ürün Bulunamadı',
+                  message: 'Arama kriterlerinize uygun ürün bulunamadı.',
+                  icon: Icons.search_off,
+                  buttonText: 'Filtreleri Temizle',
+                  onButtonPressed: () {
+                    if (!mounted) return;
+                    setState(() {
+                      _searchQuery = '';
+                      _selectedCategory = 'Tümü';
+                      _searchController.clear();
+                      _filterProducts();
+                    });
+                  },
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildProductGrid(),
                 ),
-                child: Column(
-                  children: [
-            // Arama ve Filtreler
-            _buildSearchAndFilters(),
-            
-            // Popüler Ürünler
-            if (!_isLoading) ...[
-              _buildSpecialProductsSection(),
             ],
-            
-            // Ürün Listesi
-            if (_isLoading)
-              ProfessionalComponents.createLoadingIndicator(
-                message: 'Ürünler yükleniyor...',
-              )
-            else if (_filteredProducts.isEmpty)
-              ProfessionalComponents.createEmptyState(
-                title: 'Ürün Bulunamadı',
-                message: 'Arama kriterlerinize uygun ürün bulunamadı.',
-                icon: Icons.search_off,
-                buttonText: 'Filtreleri Temizle',
-                onButtonPressed: () {
-                  if (!mounted) return;
-                  setState(() {
-                    _searchQuery = '';
-                    _selectedCategory = 'Tümü';
-                    _searchController.clear();
-                    _filterProducts();
-                  });
-                },
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: _buildProductGrid(),
-              ),
-                  ],
-                ),
-              ),
-            );
-          },
+          ),
         ),
       ),
     );
@@ -402,15 +349,37 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
       color: Colors.white,
       child: Column(
         children: [
-          // Arama çubuğu - En basit hali
-          TextField(
-            controller: _searchController,
-            onChanged: _performSearch,
-            decoration: InputDecoration(
-              hintText: 'Ürün ara...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          // Arama çubuğu - Maximum klavye performansı (RepaintBoundary ile)
+          RepaintBoundary(
+            child: TextField(
+              controller: _searchController,
+              onChanged: _performSearch,
+              onTap: () {
+                // Klavye anında açılsın - postFrameCallback kaldırıldı
+                _searchController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _searchController.text.length),
+                );
+              },
+              textInputAction: TextInputAction.search,
+              keyboardType: TextInputType.text,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              enableInteractiveSelection: true,
+              textCapitalization: TextCapitalization.none,
+              maxLines: 1,
+              style: const TextStyle(), // Sabit style - rebuild önleme
+              decoration: const InputDecoration(
+                hintText: 'Ürün ara...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                isDense: true, // Daha compact - performans için
               ),
             ),
           ),
@@ -524,18 +493,14 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
       ),
       child: InkWell(
         onTap: () {
-          Navigator.push(
+          AppRoutes.navigateToProductDetail(
             context,
-            ProfessionalAnimations.createScaleRoute(
-              UrunDetaySayfasi(
-                product: product,
-                favoriteProducts: widget.favoriteProducts,
-                onFavoriteToggle: widget.onFavoriteToggle,
-                onAddToCart: widget.onAddToCart,
-                onRemoveFromCart: widget.onRemoveFromCart,
-                cartProducts: widget.cartProducts,
-              ),
-            ),
+            product,
+            favoriteProducts: widget.favoriteProducts,
+            cartProducts: widget.cartProducts,
+            onFavoriteToggle: widget.onFavoriteToggle,
+            onAddToCart: widget.onAddToCart,
+            onRemoveFromCart: widget.onRemoveFromCart,
           );
         },
         borderRadius: BorderRadius.circular(12),

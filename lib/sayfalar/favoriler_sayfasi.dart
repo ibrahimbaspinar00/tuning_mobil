@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../model/product.dart';
+import '../model/collection.dart';
 import '../widgets/optimized_image.dart';
-import '../widgets/animated_button.dart';
 import '../widgets/error_handler.dart';
 import '../utils/debounce.dart';
 import '../widgets/recommended_products.dart';
+import '../utils/professional_animations.dart';
+import '../services/collection_service.dart';
 import 'urun_detay_sayfasi.dart';
+import 'koleksiyon_detay_sayfasi.dart';
 
 class FavorilerSayfasi extends StatefulWidget {
   final List<Product> favoriteProducts;
@@ -36,26 +40,56 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
   String _collectionSearchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  
+  final CollectionService _collectionService = CollectionService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  List<Collection> _collections = [];
+  bool _isLoadingCollections = false;
 
   @override
   void initState() {
     super.initState();
     _searchDebounce = Debounce(delay: const Duration(milliseconds: 500));
-    _tabController = TabController(length: 2, vsync: this, initialIndex: 1); // Koleksiyonlarım sekmesinde başla
+    _tabController = TabController(length: 2, vsync: this, initialIndex: 1);
     _tabController.addListener(() {
       setState(() {
-        // Sekme değiştiğinde arama kutusunu temizle
         _searchQuery = '';
         _collectionSearchQuery = '';
       });
-    });
-    // FocusNode'u hemen aktif et
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _searchFocusNode.requestFocus();
-        _searchFocusNode.unfocus();
+      if (_tabController.index == 1) {
+        _loadCollections();
       }
     });
+    _loadCollections();
+    
+    // Klavye performansı için TextField'ı önceden hazırla
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // FocusNode'u önceden hazırla - klavye açılışını hızlandırır
+        _searchFocusNode.canRequestFocus;
+      }
+    });
+  }
+
+  Future<void> _loadCollections() async {
+    if (_auth.currentUser == null) {
+      setState(() => _collections = []);
+      return;
+    }
+
+    setState(() => _isLoadingCollections = true);
+    try {
+      final collections = await _collectionService.getUserCollections();
+      setState(() {
+        _collections = collections;
+        _isLoadingCollections = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingCollections = false);
+      if (mounted) {
+        ErrorHandler.showError(context, 'Koleksiyonlar yüklenirken hata oluştu: $e');
+      }
+    }
   }
 
   @override
@@ -115,46 +149,45 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
     return products;
   }
 
-  List<Map<String, dynamic>> get _filteredCollections {
-    // Demo koleksiyonlar
-    final collections = [
-      {
-        'id': '1',
-        'name': 'Araç Temizlik Ürünleri',
-        'description': 'Araç temizliği için gerekli tüm ürünler',
-        'productCount': 5,
-        'color': Colors.blue,
-        'icon': Icons.car_repair,
-      },
-      {
-        'id': '2',
-        'name': 'Telefon Aksesuarları',
-        'description': 'Telefon için kullanışlı aksesuarlar',
-        'productCount': 3,
-        'color': Colors.green,
-        'icon': Icons.phone_android,
-      },
-      {
-        'id': '3',
-        'name': 'Güvenlik Ürünleri',
-        'description': 'Araç güvenliği için önemli ürünler',
-        'productCount': 2,
-        'color': Colors.red,
-        'icon': Icons.security,
-      },
-    ];
-
-    var filteredCollections = collections;
+  List<Collection> get _filteredCollections {
+    var filtered = _collections;
     
-    // Koleksiyon arama filtresi
     if (_collectionSearchQuery.isNotEmpty) {
-      filteredCollections = collections.where((collection) =>
-          collection['name'].toString().toLowerCase().contains(_collectionSearchQuery.toLowerCase()) ||
-          collection['description'].toString().toLowerCase().contains(_collectionSearchQuery.toLowerCase())
+      filtered = _collections.where((collection) =>
+          collection.name.toLowerCase().contains(_collectionSearchQuery.toLowerCase()) ||
+          collection.description.toLowerCase().contains(_collectionSearchQuery.toLowerCase())
       ).toList();
     }
     
-    return filteredCollections;
+    return filtered;
+  }
+
+  Color _getCollectionColor(int index) {
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.red,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+    ];
+    return colors[index % colors.length];
+  }
+
+  IconData _getCollectionIcon(int index) {
+    final icons = [
+      Icons.collections,
+      Icons.favorite,
+      Icons.star,
+      Icons.bookmark,
+      Icons.inventory_2,
+      Icons.category,
+      Icons.shopping_bag,
+      Icons.local_offer,
+    ];
+    return icons[index % icons.length];
   }
 
   @override
@@ -207,30 +240,45 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             Container(
               padding: const EdgeInsets.all(16),
               color: Colors.white,
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: _performSearch,
-                textInputAction: TextInputAction.search,
-                keyboardType: TextInputType.text,
-                enableSuggestions: false,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  hintText: 'Ürün ara...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          onPressed: () {
-                            _searchController.clear();
-                            _performSearch('');
-                          },
-                          icon: const Icon(Icons.clear),
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+              child: RepaintBoundary(
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  onChanged: _performSearch,
+                  onTap: () {
+                    // Klavye anında açılsın
+                    _searchFocusNode.requestFocus();
+                  },
+                  textInputAction: TextInputAction.search,
+                  keyboardType: TextInputType.text,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  smartDashesType: SmartDashesType.disabled,
+                  smartQuotesType: SmartQuotesType.disabled,
+                  enableInteractiveSelection: true,
+                  textCapitalization: TextCapitalization.none,
+                  maxLines: 1,
+                  style: const TextStyle(),
+                  decoration: InputDecoration(
+                    hintText: 'Ürün ara...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            onPressed: () {
+                              _searchController.clear();
+                              _performSearch('');
+                            },
+                            icon: const Icon(Icons.clear),
+                          )
+                        : null,
+                    border: const OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    isDense: true,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
             ),
@@ -276,22 +324,31 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             borderRadius: BorderRadius.circular(isSmallScreen ? 20 : 25),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
             ],
           ),
-          child: TextField(
-            keyboardType: TextInputType.text,
-            textCapitalization: TextCapitalization.words,
-            onChanged: (value) {
-              _searchDebounce(() {
-                setState(() {
-                  _searchQuery = value;
+          child: RepaintBoundary(
+            child: TextField(
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.search,
+              textCapitalization: TextCapitalization.none,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              enableInteractiveSelection: true,
+              maxLines: 1,
+              style: const TextStyle(),
+              onChanged: (value) {
+                _searchDebounce(() {
+                  setState(() {
+                    _searchQuery = value;
+                  });
                 });
-              });
-            },
+              },
             decoration: InputDecoration(
               hintText: 'Favori ürünlerinizde ara...',
               hintStyle: TextStyle(
@@ -321,6 +378,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                 horizontal: isSmallScreen ? 12 : 16,
                 vertical: isSmallScreen ? 8 : 12,
               ),
+            ),
             ),
           ),
         ),
@@ -469,9 +527,11 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
   }
 
   Widget _buildProductCard(Product product, bool isSmallScreen, bool isTablet) {
-    final inCart = widget.cartProducts?.any((p) => p.name == product.name) ?? false;
-    
+    final isFavorite = widget.favoriteProducts.any((p) => p.id == product.id);
+    final inCart = widget.cartProducts?.any((p) => p.id == product.id) ?? false;
+
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -480,101 +540,150 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => UrunDetaySayfasi(
+            ProfessionalAnimations.createScaleRoute(
+              UrunDetaySayfasi(
                 product: product,
-                onFavoriteToggle: widget.onFavoriteToggle,
-                onAddToCart: widget.onAddToCart ?? (p) {},
-                onRemoveFromCart: (p) {}, // Favoriler sayfasında remove from cart işlevi yok
                 favoriteProducts: widget.favoriteProducts,
+                onFavoriteToggle: (p) => widget.onFavoriteToggle(p, showMessage: true),
+                onAddToCart: (p) => widget.onAddToCart?.call(p, showMessage: true) ?? (_) {},
+                onRemoveFromCart: (p) {},
                 cartProducts: widget.cartProducts ?? [],
               ),
             ),
           );
         },
         borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ürün resmi
-            Expanded(
-              flex: 2, // Daha küçük resim alanı
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  color: Colors.grey[100],
-                ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Ürün resmi
+              Expanded(
+                flex: 3,
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  borderRadius: BorderRadius.circular(8),
                   child: OptimizedImage(
                     imageUrl: product.imageUrl,
+                    width: double.infinity,
+                    height: double.infinity,
                     fit: BoxFit.cover,
                   ),
                 ),
               ),
-            ),
-            
-            // Ürün bilgileri
-            Expanded(
-              flex: 3, // Daha büyük bilgi alanı
-              child: Padding(
-                padding: EdgeInsets.all(isSmallScreen ? 4 : 6), // Daha küçük padding
+              const SizedBox(height: 8),
+              // Ürün bilgileri
+              Expanded(
+                flex: 2,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Ürün adı
                     Text(
                       product.name,
                       style: TextStyle(
-                        fontSize: isSmallScreen ? 10 : isTablet ? 12 : 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[800],
+                        fontSize: isSmallScreen ? 12 : 14,
+                        fontWeight: FontWeight.w600,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    
-                    // Fiyat
                     Text(
                       '${product.price.toStringAsFixed(2)} ₺',
                       style: TextStyle(
-                        fontSize: isSmallScreen ? 11 : isTablet ? 13 : 15,
-                        color: Colors.green[700],
+                        fontSize: isSmallScreen ? 14 : 16,
                         fontWeight: FontWeight.bold,
+                        color: Colors.green,
                       ),
                     ),
-                    
-                    const Spacer(),
-                    
-                    // Butonlar
+                    const SizedBox(height: 8),
+                    // Butonlar (Ana sayfadaki stil)
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Favori butonu
                         Expanded(
-                          child: AnimatedButton(
-                            onPressed: () => widget.onFavoriteToggle(product),
-                            child: Icon(
-                              Icons.favorite,
-                              color: Colors.red,
-                              size: isSmallScreen ? 14 : 16,
+                          child: SizedBox(
+                            height: isSmallScreen ? 28 : 32,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {});
+                                widget.onFavoriteToggle(product);
+                              },
+                              icon: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 300),
+                                child: Icon(
+                                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                                  key: ValueKey(isFavorite),
+                                  size: isSmallScreen ? 14 : 16,
+                                  color: isFavorite ? Colors.red : Colors.grey[700],
+                                ),
+                              ),
+                              label: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 300),
+                                child: Text(
+                                  isFavorite ? 'Favoride' : 'Favori',
+                                  key: ValueKey(isFavorite),
+                                  style: TextStyle(fontSize: isSmallScreen ? 10 : 12),
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isFavorite ? Colors.red[50] : Colors.grey[50],
+                                foregroundColor: isFavorite ? Colors.red : Colors.grey[700],
+                                elevation: 0,
+                                padding: EdgeInsets.zero,
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        // Sepete ekle butonu
                         Expanded(
-                          child: AnimatedButton(
-                            onPressed: () {
-                              if (widget.onAddToCart != null) {
-                                widget.onAddToCart!(product);
-                              }
-                            },
-                            child: Icon(
-                              inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
-                              color: inCart ? Colors.green : Colors.blue,
-                              size: isSmallScreen ? 14 : 16,
+                          child: SizedBox(
+                            height: isSmallScreen ? 28 : 32,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {});
+                                if (widget.onAddToCart != null) {
+                                  widget.onAddToCart!(product);
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: inCart ? Colors.green[50] : Colors.blue[50],
+                                foregroundColor: inCart ? Colors.green : Colors.blue[700],
+                                elevation: 0,
+                                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 300),
+                                    child: Icon(
+                                      inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                                      key: ValueKey(inCart),
+                                      size: isSmallScreen ? 12 : 14,
+                                    ),
+                                  ),
+                                  SizedBox(width: isSmallScreen ? 2 : 4),
+                                  Flexible(
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 300),
+                                      child: Text(
+                                        inCart ? 'Sepette' : 'Sepete',
+                                        key: ValueKey(inCart),
+                                        style: TextStyle(fontSize: isSmallScreen ? 9 : 10),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -583,8 +692,8 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -605,22 +714,31 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             borderRadius: BorderRadius.circular(isSmallScreen ? 20 : 25),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
             ],
           ),
-          child: TextField(
-            keyboardType: TextInputType.text,
-            textCapitalization: TextCapitalization.words,
-            onChanged: (value) {
-              _searchDebounce(() {
-                setState(() {
-                  _collectionSearchQuery = value;
+          child: RepaintBoundary(
+            child: TextField(
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.search,
+              textCapitalization: TextCapitalization.none,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              enableInteractiveSelection: true,
+              maxLines: 1,
+              style: const TextStyle(),
+              onChanged: (value) {
+                _searchDebounce(() {
+                  setState(() {
+                    _collectionSearchQuery = value;
+                  });
                 });
-              });
-            },
+              },
             decoration: InputDecoration(
               hintText: 'Koleksiyonlarınızda ara...',
               hintStyle: TextStyle(
@@ -650,6 +768,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                 horizontal: isSmallScreen ? 12 : 16,
                 vertical: isSmallScreen ? 8 : 12,
               ),
+            ),
             ),
           ),
         ),
@@ -750,7 +869,10 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
         
         // Koleksiyonlar listesi
         Expanded(
-          child: _buildCollectionsList(),
+          child: RefreshIndicator(
+            onRefresh: _loadCollections,
+            child: _buildCollectionsList(),
+          ),
         ),
       ],
     );
@@ -760,6 +882,58 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
     final collections = _filteredCollections;
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 400;
+
+    if (_isLoadingCollections) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_auth.currentUser == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.collections_bookmark_outlined, size: 80, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Koleksiyonları görmek için giriş yapın',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (collections.isEmpty && _collectionSearchQuery.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.collections_bookmark_outlined, size: 80, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Henüz koleksiyonunuz yok',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Yeni koleksiyon oluşturarak başlayın',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _createNewCollection,
+              icon: const Icon(Icons.add),
+              label: const Text('Yeni Koleksiyon Oluştur'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (collections.isEmpty && _collectionSearchQuery.isNotEmpty) {
       return Center(
@@ -800,6 +974,10 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
       itemCount: collections.length,
       itemBuilder: (context, index) {
         final collection = collections[index];
+        final color = _getCollectionColor(index);
+        final icon = _getCollectionIcon(index);
+        final productCount = collection.productIds.length;
+
         return Card(
           margin: EdgeInsets.only(bottom: isSmallScreen ? 8 : 12),
           elevation: 3,
@@ -807,7 +985,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             borderRadius: BorderRadius.circular(15),
           ),
           child: InkWell(
-            onTap: () => _openCollection(collection['id'] as String),
+            onTap: () => _openCollection(collection.id),
             borderRadius: BorderRadius.circular(15),
             child: Container(
               padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
@@ -818,7 +996,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                   end: Alignment.bottomRight,
                   colors: [
                     Colors.white,
-                    (collection['color'] as Color).withOpacity(0.05),
+                    color.withValues(alpha: 0.05),
                   ],
                 ),
               ),
@@ -832,24 +1010,20 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          (collection['color'] as Color).withOpacity(0.2),
-                          (collection['color'] as Color).withOpacity(0.1),
+                          color.withValues(alpha: 0.2),
+                          color.withValues(alpha: 0.1),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(15),
                       boxShadow: [
                         BoxShadow(
-                          color: (collection['color'] as Color).withOpacity(0.3),
+                          color: color.withValues(alpha: 0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    child: Icon(
-                      collection['icon'] as IconData,
-                      color: collection['color'] as Color,
-                      size: isSmallScreen ? 22 : 28,
-                    ),
+                    child: Icon(icon, color: color, size: isSmallScreen ? 22 : 28),
                   ),
                   SizedBox(width: isSmallScreen ? 12 : 16),
                   Expanded(
@@ -857,7 +1031,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          collection['name'] as String,
+                          collection.name,
                           style: TextStyle(
                             fontSize: isSmallScreen ? 15 : 17,
                             fontWeight: FontWeight.bold,
@@ -866,10 +1040,15 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                         ),
                         SizedBox(height: isSmallScreen ? 3 : 4),
                         Text(
-                          collection['description'] as String,
+                          collection.description.isNotEmpty
+                              ? collection.description
+                              : 'Açıklama yok',
                           style: TextStyle(
                             fontSize: isSmallScreen ? 12 : 14,
                             color: Colors.grey[600],
+                            fontStyle: collection.description.isEmpty
+                                ? FontStyle.italic
+                                : FontStyle.normal,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -883,14 +1062,14 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                                 vertical: isSmallScreen ? 2 : 4,
                               ),
                               decoration: BoxDecoration(
-                                color: (collection['color'] as Color).withOpacity(0.1),
+                                color: color.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                '${collection['productCount']} ürün',
+                                '$productCount ürün',
                                 style: TextStyle(
                                   fontSize: isSmallScreen ? 10 : 12,
-                                  color: collection['color'] as Color,
+                                  color: color,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -916,6 +1095,9 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
   }
 
   void _createNewCollection() {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -924,16 +1106,21 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
+              controller: nameController,
               decoration: const InputDecoration(
                 labelText: 'Koleksiyon Adı',
                 border: OutlineInputBorder(),
+                hintText: 'Örn: Araç Aksesuarları',
               ),
+              autofocus: true,
             ),
             const SizedBox(height: 16),
             TextField(
+              controller: descriptionController,
               decoration: const InputDecoration(
-                labelText: 'Açıklama',
+                labelText: 'Açıklama (İsteğe bağlı)',
                 border: OutlineInputBorder(),
+                hintText: 'Koleksiyonunuz hakkında kısa bir açıklama',
               ),
               maxLines: 3,
             ),
@@ -945,14 +1132,48 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
             child: const Text('İptal'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) {
+                ErrorHandler.showError(context, 'Koleksiyon adı boş olamaz');
+                return;
+              }
+
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Koleksiyon oluşturuldu!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+
+              try {
+                final user = _auth.currentUser;
+                if (user == null) {
+                  ErrorHandler.showError(context, 'Koleksiyon oluşturmak için giriş yapmalısınız');
+                  return;
+                }
+
+                final collection = Collection(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  name: name,
+                  description: descriptionController.text.trim(),
+                  userId: user.uid,
+                  productIds: [],
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                );
+
+                await _collectionService.createCollection(collection);
+                await _loadCollections();
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('"$name" koleksiyonu oluşturuldu!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ErrorHandler.showError(context, 'Koleksiyon oluşturulurken hata oluştu: $e');
+                }
+              }
             },
             child: const Text('Oluştur'),
           ),
@@ -961,46 +1182,30 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
     );
   }
 
-  void _openCollection(String collectionId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Koleksiyon Detayı'),
-            backgroundColor: Colors.blue[600],
-            foregroundColor: Colors.white,
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.collections,
-                  size: 80,
-                  color: Colors.blue[300],
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Koleksiyon ID: $collectionId',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Bu koleksiyonun detayları yakında eklenecek!',
-                  style: TextStyle(
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+  void _openCollection(String collectionId) async {
+    final collection = _collections.firstWhere(
+      (c) => c.id == collectionId,
+      orElse: () => Collection(
+        id: collectionId,
+        name: '',
+        description: '',
+        userId: '',
+        productIds: [],
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       ),
     );
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => KoleksiyonDetaySayfasi(collection: collection),
+      ),
+    );
+
+    if (result == true) {
+      _loadCollections();
+    }
   }
 
   void _showCollectionOptions() {
@@ -1163,6 +1368,11 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
   }
 
   Widget _buildCollectionStats() {
+    final totalCollections = _collections.length;
+    final totalProducts = _collections.fold<int>(
+      0,
+      (sum, collection) => sum + collection.productIds.length,
+    );
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 400;
 
@@ -1179,7 +1389,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
           Expanded(
             child: _buildStatItem(
               'Toplam',
-              '${_filteredCollections.length}',
+              '$totalCollections',
               Icons.collections,
               Colors.blue,
             ),
@@ -1192,7 +1402,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
           Expanded(
             child: _buildStatItem(
               'Ürünler',
-              '12',
+              '$totalProducts',
               Icons.inventory,
               Colors.green,
             ),
@@ -1205,7 +1415,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
           Expanded(
             child: _buildStatItem(
               'Favori',
-              '3',
+              '${widget.favoriteProducts.length}',
               Icons.favorite,
               Colors.red,
             ),

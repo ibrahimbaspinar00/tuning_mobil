@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../model/collection.dart';
 import '../model/product.dart';
 
@@ -19,25 +20,12 @@ class CollectionService {
     }
 
     try {
-      // Offline-first approach - önce cache'den dene
-      QuerySnapshot snapshot;
-      try {
-        snapshot = await _firestore
-            .collection('collections')
-            .where('userId', isEqualTo: user.uid)
-            .orderBy('updatedAt', descending: true)
-            .limit(50) // Daha fazla koleksiyon gösterebilir
-            .get(const GetOptions(source: Source.serverAndCache));
-      } catch (e) {
-        // Server hatası olursa cache'den oku
-        print('Debug: CollectionService - Server error, trying cache: $e');
-        snapshot = await _firestore
-            .collection('collections')
-            .where('userId', isEqualTo: user.uid)
-            .orderBy('updatedAt', descending: true)
-            .limit(50)
-            .get(const GetOptions(source: Source.cache));
-      }
+      // Sadece server'dan oku (offline destek yok)
+      final snapshot = await _firestore
+          .collection('collections')
+          .where('userId', isEqualTo: user.uid)
+          .limit(50)
+          .get(const GetOptions(source: Source.server));
       
       print('Debug: CollectionService - Found ${snapshot.docs.length} collections');
       
@@ -47,16 +35,24 @@ class CollectionService {
         try {
           final data = doc.data() as Map<String, dynamic>;
           data['id'] = doc.id;
+          
+          // Timestamp'leri düzelt
+          if (data['createdAt'] is Timestamp) {
+            data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+          }
+          if (data['updatedAt'] is Timestamp) {
+            data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+          }
+          
           final collection = Collection.fromMap(data);
           collections.add(collection);
         } catch (e) {
-          print('Debug: CollectionService - Error parsing collection ${doc.id}: $e');
-          // Hatalı dokümanı atla
+          debugPrint('Error parsing collection ${doc.id}: $e');
           continue;
         }
       }
 
-      // Zaten orderBy ile sıralanmış ama yine de sırala
+      // Tarihe göre sırala
       collections.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       print('Debug: CollectionService - Successfully parsed ${collections.length} collections');
       return collections;
@@ -81,15 +77,19 @@ class CollectionService {
     print('Debug: CollectionService - User ID: ${user.uid}');
     
     try {
+      final data = collection.toMap();
+      // Timestamp'leri Firestore formatına çevir
+      data['createdAt'] = Timestamp.fromDate(collection.createdAt);
+      data['updatedAt'] = Timestamp.fromDate(collection.updatedAt);
+      
       await _firestore
           .collection('collections')
           .doc(collection.id)
-          .set(collection.toMap());
+          .set(data);
       
-      print('Debug: CollectionService - Collection saved to Firestore');
       return collection.id;
     } catch (e) {
-      print('Debug: CollectionService - Error saving to Firestore: $e');
+      debugPrint('Error saving collection: $e');
       rethrow;
     }
   }
@@ -112,7 +112,7 @@ class CollectionService {
     // Eğer koleksiyon boşsa ve ürün imageUrl'i varsa, kapak fotoğrafı olarak ayarla
     Map<String, dynamic> updateData = {
       'productIds': FieldValue.arrayUnion([productId]),
-      'updatedAt': DateTime.now().toIso8601String(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
     };
     
     // Eğer koleksiyon boşsa ve kapak fotoğrafı yoksa, ilk ürünün fotoğrafını kapak yap
@@ -133,7 +133,7 @@ class CollectionService {
 
     await _firestore.collection('collections').doc(collectionId).update({
       'productIds': FieldValue.arrayRemove([productId]),
-      'updatedAt': DateTime.now().toIso8601String(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }
 
@@ -142,10 +142,15 @@ class CollectionService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Kullanıcı giriş yapmamış');
 
+    final data = collection.toMap();
+    // Timestamp'leri Firestore formatına çevir
+    data['createdAt'] = Timestamp.fromDate(collection.createdAt);
+    data['updatedAt'] = Timestamp.fromDate(collection.updatedAt);
+
     await _firestore
         .collection('collections')
         .doc(collection.id)
-        .update(collection.toMap());
+        .update(data);
   }
 
   // Koleksiyonu sil
@@ -161,27 +166,31 @@ class CollectionService {
     final doc = await _firestore.collection('collections').doc(collectionId).get();
     if (!doc.exists) return [];
 
-    final collection = Collection.fromMap(doc.data()!);
+    final data = doc.data()!;
+    data['id'] = doc.id;
+    
+    // Timestamp'leri düzelt
+    if (data['createdAt'] is Timestamp) {
+      data['createdAt'] = (data['createdAt'] as Timestamp).toDate().toIso8601String();
+    }
+    if (data['updatedAt'] is Timestamp) {
+      data['updatedAt'] = (data['updatedAt'] as Timestamp).toDate().toIso8601String();
+    }
+
+    final collection = Collection.fromMap(data);
     final products = <Product>[];
 
     for (final productId in collection.productIds) {
       try {
         final productDoc = await _firestore.collection('products').doc(productId).get();
         if (productDoc.exists) {
-          final data = productDoc.data()!;
-          products.add(Product(
-            id: productId,
-            name: data['name'] ?? '',
-            description: data['description'] ?? '',
-            price: (data['price'] ?? 0).toDouble(),
-            imageUrl: data['imageUrl'] ?? '',
-            category: data['category'] ?? 'Genel',
-            stock: data['stock'] ?? 0,
-            quantity: 1,
-          ));
+          final productData = productDoc.data()!;
+          productData['id'] = productId;
+          final product = Product.fromMap(productData);
+          products.add(product);
         }
       } catch (e) {
-        // Ürün bulunamadı, devam et
+        debugPrint('Error loading product $productId: $e');
       }
     }
 

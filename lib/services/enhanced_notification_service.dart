@@ -5,6 +5,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../model/notification.dart';
 
 /// Gelişmiş bildirim servisi - Kampanya, indirim, sipariş, kargo bildirimleri
@@ -33,9 +35,18 @@ class EnhancedNotificationService {
       await _createNotificationChannels();
       
       // Message handlers
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      // Background handler main.dart'ta kaydedilmiş olmalı (main() içinde)
+      // onBackgroundMessage sadece main() içinde çağrılmalı
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
       FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+      
+      // Uygulama kapalıyken açılan bildirimleri kontrol et
+      // Geç çağrılır (plugin'in tamamen hazır olması için)
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _checkInitialMessage().catchError((e) {
+          debugPrint('⚠️ Initial message check hatası (normal olabilir): $e');
+        });
+      });
       
       _isInitialized = true;
       print('✅ EnhancedNotificationService başlatıldı');
@@ -179,9 +190,184 @@ class EnhancedNotificationService {
     await androidPlugin?.createNotificationChannel(systemChannel);
   }
 
+  /// Background message handler (main.dart'tan çağrılır)
+  /// Bu metod background isolate'de çalışır, singleton instance kullanılamaz
+  Future<void> handleBackgroundMessage(RemoteMessage message) async {
+    debugPrint('📱 Background mesaj işleniyor: ${message.messageId}');
+    
+    // Background isolate'de local notifications plugin'i yeniden initialize et
+    final FlutterLocalNotificationsPlugin localNotifications = 
+        FlutterLocalNotificationsPlugin();
+    
+    // Android için ayarlar
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    
+    const DarwinInitializationSettings iosSettings =
+        DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    const InitializationSettings settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    // Background isolate'de initialize et
+    await localNotifications.initialize(settings);
+    
+    // Notification channels oluştur (Android için)
+    if (Platform.isAndroid) {
+      final androidPlugin = localNotifications
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      
+      const AndroidNotificationChannel promotionChannel = AndroidNotificationChannel(
+        'promotion_notifications',
+        '🎯 Kampanya & İndirim',
+        description: 'Özel kampanyalar, indirimler ve promosyonlar',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      
+      const AndroidNotificationChannel orderChannel = AndroidNotificationChannel(
+        'order_notifications',
+        '📦 Sipariş Takibi',
+        description: 'Sipariş onayı, hazırlık ve durum güncellemeleri',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      
+      const AndroidNotificationChannel shippingChannel = AndroidNotificationChannel(
+        'shipping_notifications',
+        '🚚 Kargo Takibi',
+        description: 'Kargo durumu ve teslimat bildirimleri',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      
+      const AndroidNotificationChannel paymentChannel = AndroidNotificationChannel(
+        'payment_notifications',
+        '💳 Ödeme Bildirimleri',
+        description: 'Ödeme onayı ve iade bildirimleri',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      
+      const AndroidNotificationChannel systemChannel = AndroidNotificationChannel(
+        'system_notifications',
+        '⚙️ Sistem Bildirimleri',
+        description: 'Sistem güncellemeleri ve önemli duyurular',
+        importance: Importance.defaultImportance,
+        playSound: false,
+        enableVibration: false,
+      );
+
+      await androidPlugin?.createNotificationChannel(promotionChannel);
+      await androidPlugin?.createNotificationChannel(orderChannel);
+      await androidPlugin?.createNotificationChannel(shippingChannel);
+      await androidPlugin?.createNotificationChannel(paymentChannel);
+      await androidPlugin?.createNotificationChannel(systemChannel);
+    }
+    
+    // Local notification göster (uygulama kapalıyken)
+    if (message.notification != null) {
+      final channelId = _getChannelIdHelper(message.data);
+      final channelName = _getChannelNameHelper(channelId);
+      final channelDescription = _getChannelDescriptionHelper(channelId);
+      
+      AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        channelId,
+        channelName,
+        channelDescription: channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
+        icon: '@mipmap/ic_launcher',
+      );
+
+      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      final NotificationDetails details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      await localNotifications.show(
+        message.hashCode,
+        message.notification!.title ?? 'Bildirim',
+        message.notification!.body ?? '',
+        details,
+        payload: message.data.toString(),
+      );
+      
+      debugPrint('✅ Background bildirim gösterildi: ${message.notification!.title}');
+      
+      // Firestore kaydı uygulama açıldığında yapılacak
+      debugPrint('✅ Background bildirim gösterildi');
+    }
+  }
+  
+  /// Helper methods for background handler (static-like, but instance methods)
+  String _getChannelIdHelper(Map<String, dynamic> data) {
+    final type = data['type'] ?? 'system';
+    switch (type) {
+      case 'promotion':
+        return 'promotion_notifications';
+      case 'order':
+        return 'order_notifications';
+      case 'shipping':
+        return 'shipping_notifications';
+      case 'payment':
+        return 'payment_notifications';
+      default:
+        return 'system_notifications';
+    }
+  }
+  
+  String _getChannelNameHelper(String channelId) {
+    switch (channelId) {
+      case 'promotion_notifications':
+        return '🎯 Kampanya & İndirim';
+      case 'order_notifications':
+        return '📦 Sipariş Takibi';
+      case 'shipping_notifications':
+        return '🚚 Kargo Takibi';
+      case 'payment_notifications':
+        return '💳 Ödeme Bildirimleri';
+      default:
+        return '⚙️ Sistem Bildirimleri';
+    }
+  }
+
+  String _getChannelDescriptionHelper(String channelId) {
+    switch (channelId) {
+      case 'promotion_notifications':
+        return 'Özel kampanyalar, indirimler ve promosyonlar';
+      case 'order_notifications':
+        return 'Sipariş onayı, hazırlık ve durum güncellemeleri';
+      case 'shipping_notifications':
+        return 'Kargo durumu ve teslimat bildirimleri';
+      case 'payment_notifications':
+        return 'Ödeme onayı ve iade bildirimleri';
+      default:
+        return 'Sistem güncellemeleri ve önemli duyurular';
+    }
+  }
+  
   /// Foreground message handler
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    print('📨 Foreground message alındı: ${message.messageId}');
+    debugPrint('📨 Foreground message alındı: ${message.messageId}');
     
     final notification = message.notification;
     if (notification != null) {
@@ -193,6 +379,74 @@ class EnhancedNotificationService {
         channelId: _getChannelId(message.data),
         type: message.data['type'] ?? 'system',
       );
+      
+      // Firestore'a kaydet
+      await _saveNotificationToFirestore(message);
+    }
+  }
+  
+  /// Uygulama kapalıyken açılan bildirimleri kontrol et
+  Future<void> _checkInitialMessage() async {
+    try {
+      // Platform kontrolü - Web ve bazı platformlarda desteklenmeyebilir
+      if (kIsWeb) {
+        debugPrint('⚠️ getInitialMessage web platformunda desteklenmiyor');
+        return;
+      }
+
+      // Method channel kontrolü - Bazı durumlarda plugin henüz hazır olmayabilir
+      // Bu durumda hatayı yakalayıp sessizce devam et
+      try {
+        final initialMessage = await _messaging.getInitialMessage()
+            .timeout(const Duration(seconds: 2), onTimeout: () {
+          debugPrint('⚠️ getInitialMessage timeout');
+          return null;
+        });
+        
+        if (initialMessage != null) {
+          debugPrint('📱 Uygulama kapalıyken gelen bildirim var');
+          await _handleNotificationTap(initialMessage);
+        }
+      } on MissingPluginException catch (e) {
+        // Plugin henüz hazır değil veya platform desteklemiyor
+        debugPrint('⚠️ Firebase Messaging plugin henüz hazır değil (normal olabilir): $e');
+        // Uygulama çalışmaya devam eder, bu kritik bir hata değil
+      } on PlatformException catch (e) {
+        // Platform-specific hata
+        debugPrint('⚠️ Platform exception (normal olabilir): $e');
+      }
+    } catch (e) {
+      // Genel hata yakalama
+      debugPrint('⚠️ getInitialMessage genel hatası (normal olabilir): $e');
+      // Hata durumunda sessizce devam et, uygulama çalışmaya devam eder
+    }
+  }
+  
+  /// Bildirimi Firestore'a kaydet
+  Future<void> _saveNotificationToFirestore(RemoteMessage message) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+      
+      final notification = AppNotification(
+        id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        title: message.notification?.title ?? 'Bildirim',
+        body: message.notification?.body ?? '',
+        type: message.data['type'] ?? 'system',
+        createdAt: DateTime.now(),
+        isRead: false,
+        actionUrl: message.data['action']?.toString(),
+        data: message.data,
+      );
+      
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(notification.id)
+          .set(notification.toFirestore());
+    } catch (e) {
+      debugPrint('❌ Bildirim Firestore\'a kaydedilemedi: $e');
     }
   }
 
@@ -541,6 +795,42 @@ class EnhancedNotificationService {
     String? userId,
     DateTime? scheduledAt,
   }) async {
+    String? fcmToken;
+    
+    // Eğer userId belirtilmişse, kullanıcının FCM token'ını al
+    if (userId != null) {
+      try {
+        final userDoc = await _firestore.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          fcmToken = userDoc.data()?['fcmToken'];
+          print('📱 Kullanıcının FCM Token\'ı alındı: ${fcmToken != null ? fcmToken.substring(0, 20) + '...' : 'yok'}');
+        }
+      } catch (e) {
+        print('⚠️ Kullanıcı FCM Token alınamadı: $e');
+      }
+    } else {
+      // userId yoksa, mevcut kullanıcının token'ını kullan
+      fcmToken = _fcmToken;
+    }
+
+    // notification_queue koleksiyonuna kaydet - Firebase Functions bunu dinleyip FCM bildirimi gönderecek
+    try {
+      final notificationQueueRef = _firestore.collection('notification_queue').doc();
+      await notificationQueueRef.set({
+        if (fcmToken != null) 'fcmToken': fcmToken,
+        if (userId != null) 'userId': userId,
+        'title': title,
+        'body': body,
+        'type': type,
+        'data': data ?? {},
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending', // Firebase Functions bunu 'sent' veya 'failed' olarak güncelleyecek
+      });
+      print('✅ Bildirim kuyruğa eklendi, Firebase Functions gönderecek: $title');
+    } catch (e) {
+      print('❌ Bildirim kuyruğa eklenemedi: $e');
+    }
+
     final notification = AppNotification(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       title: title,
@@ -570,7 +860,7 @@ class EnhancedNotificationService {
       print('⚠️ Firestore hatası (bildirim local olarak gösterilecek): $e');
     }
 
-    // Local notification göster - Her durumda gösterilmeli
+    // Local notification göster - Her durumda gösterilmeli (uygulama açıkken)
     try {
       await _showLocalNotification(
         id: notification.hashCode,
@@ -646,9 +936,4 @@ class EnhancedNotificationService {
   bool get isInitialized => _isInitialized;
 }
 
-/// Background message handler
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('📨 Background message alındı: ${message.messageId}');
-  // Background'da gelen mesajları işle
-}
+// Background handler artık main.dart'ta tanımlı

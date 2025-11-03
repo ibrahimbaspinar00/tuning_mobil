@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 
 /// Gelişmiş güvenlik ve doğrulama sistemi
 class SecurityManager {

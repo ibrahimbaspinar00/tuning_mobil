@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../model/product.dart';
 import '../model/order.dart';
+import '../services/firebase_data_service.dart';
 
 /// Ana uygulama state yönetimi için Provider
 class AppStateProvider extends ChangeNotifier {
@@ -87,12 +88,17 @@ class AppStateProvider extends ChangeNotifier {
   
   // Favorite operations
   void toggleFavorite(Product product) {
+    final FirebaseDataService dataService = FirebaseDataService();
     final index = _favoriteProducts.indexWhere((p) => p.id == product.id);
     
     if (index >= 0) {
       _favoriteProducts.removeAt(index);
+      // Firestore'dan da kaldır
+      try { dataService.removeFromFavorites(product.id); } catch (_) {}
     } else {
       _favoriteProducts.add(product);
+      // Firestore'a ekle
+      try { dataService.addToFavorites(product.id); } catch (_) {}
     }
     
     notifyListeners();

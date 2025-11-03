@@ -106,6 +106,7 @@ class _KayitSayfasiState extends State<KayitSayfasi> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

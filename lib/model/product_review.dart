@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class ProductReview {
   final String id;
   final String productId;
@@ -33,6 +35,20 @@ class ProductReview {
 
   // JSON'dan ProductReview oluştur
   factory ProductReview.fromJson(Map<String, dynamic> json) {
+    // Timestamp veya String tarih desteği
+    DateTime parseDateTime(dynamic value) {
+      if (value == null) return DateTime.now();
+      if (value is DateTime) return value;
+      if (value is Timestamp) {
+        return value.toDate();
+      }
+      try {
+        return DateTime.parse(value.toString());
+      } catch (e) {
+        return DateTime.now();
+      }
+    }
+    
     return ProductReview(
       id: json['id'] ?? '',
       productId: json['productId'] ?? '',
@@ -42,12 +58,12 @@ class ProductReview {
       rating: json['rating'] ?? 0,
       comment: json['comment'] ?? '',
       imageUrls: (json['imageUrls'] as List<dynamic>?)?.cast<String>() ?? [],
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
+      createdAt: parseDateTime(json['createdAt']),
+      updatedAt: parseDateTime(json['updatedAt']),
       isApproved: json['isApproved'] ?? false,
       adminResponse: json['adminResponse'],
       adminResponseDate: json['adminResponseDate'] != null 
-          ? DateTime.parse(json['adminResponseDate']) 
+          ? parseDateTime(json['adminResponseDate'])
           : null,
       isEdited: json['isEdited'] ?? false,
     );

@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase Service Account (Güvenlik - ASLA commit etmeyin!)
+**/service_account.json
+**/*firebase-adminsdk*.json

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import '../model/notification.dart';
 import '../services/notification_service.dart';
 import '../widgets/error_handler.dart';
+import '../config/app_routes.dart';
 
 class BildirimlerSayfasi extends StatefulWidget {
   const BildirimlerSayfasi({super.key});
@@ -18,6 +20,7 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
@@ -65,7 +68,7 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pushNamed(context, '/login');
+              AppRoutes.navigateToLogin(context);
             },
             icon: const Icon(Icons.login),
             label: const Text('Giriş Yap'),
@@ -81,87 +84,80 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
   }
 
   Widget _buildNotificationsList() {
-    // Örnek bildirimler - gerçek uygulamada Firebase'den gelecek
-    final sampleNotifications = _getSampleNotifications();
-    
-    return RefreshIndicator(
-      onRefresh: () async {
-        setState(() {});
-      },
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: sampleNotifications.length,
-        itemBuilder: (context, index) {
-          final notification = sampleNotifications[index];
-          return _buildNotificationCard(notification);
-        },
-      ),
-    );
-  }
+    return StreamBuilder<List<AppNotification>>(
+      stream: _notificationService.getUserNotifications(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-  List<AppNotification> _getSampleNotifications() {
-    return [
-      AppNotification(
-        id: '1',
-        title: '🎉 Yeni Kupon Kodunuz Hazır!',
-        body: 'İndirim çarkından kazandığınız %20 indirim kuponu: SAVE20',
-        type: 'promotion',
-        isRead: false,
-        createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
-        actionUrl: '/coupons',
-        data: {'coupon_code': 'SAVE20', 'discount': 20},
-      ),
-      AppNotification(
-        id: '2',
-        title: '🔥 Flash İndirim!',
-        body: 'Araç aksesuarlarında %30 indirim! Son 2 saat!',
-        type: 'promotion',
-        isRead: false,
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-        actionUrl: '/products',
-        data: {'discount': 30, 'category': 'car_accessories'},
-      ),
-      AppNotification(
-        id: '3',
-        title: '💰 Cüzdanınıza Para Yüklendi',
-        body: '100₺ başarıyla cüzdanınıza yüklendi. Yeni bakiye: 250₺',
-        type: 'payment',
-        isRead: true,
-        createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-        actionUrl: '/wallet',
-        data: {'amount': 100, 'balance': 250},
-      ),
-      AppNotification(
-        id: '4',
-        title: '🎁 Özel Kupon Kodunuz',
-        body: 'VIP müşterilerimize özel %15 indirim: VIP15',
-        type: 'promotion',
-        isRead: true,
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        actionUrl: '/coupons',
-        data: {'coupon_code': 'VIP15', 'discount': 15},
-      ),
-      AppNotification(
-        id: '5',
-        title: '🚚 Siparişiniz Kargoya Verildi',
-        body: 'Sipariş #12345 kargoya verildi. Takip kodu: TR123456789',
-        type: 'shipping',
-        isRead: true,
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-        actionUrl: '/orders',
-        data: {'order_id': '12345', 'tracking_code': 'TR123456789'},
-      ),
-      AppNotification(
-        id: '6',
-        title: '🎯 Yeni Ürün Geldi!',
-        body: 'Favori listenizdeki ürünlerden biri stokta! Hemen kontrol edin.',
-        type: 'stock',
-        isRead: false,
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        actionUrl: '/favorites',
-        data: {'action': 'view_favorites'},
-      ),
-    ];
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Bildirimler yüklenirken hata oluştu',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Tekrar Dene'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final notifications = snapshot.data ?? [];
+
+        if (notifications.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.notifications_none, size: 80, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Henüz bildiriminiz yok',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Kampanyalar ve sipariş güncellemeleri\nburada görünecek',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+          },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final notification = notifications[index];
+              return _buildNotificationCard(notification);
+            },
+          ),
+        );
+      },
+    );
   }
 
 
@@ -390,7 +386,7 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: iconColor.withOpacity(0.1),
+        color: iconColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Icon(
@@ -434,7 +430,7 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -509,22 +505,23 @@ class _BildirimlerSayfasiState extends State<BildirimlerSayfasi> {
     }
   }
 
-  void _copyCouponCode(String couponCode) {
-    // TODO: Clipboard'a kopyalama işlemi
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Kupon kodu kopyalandı: $couponCode'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-        action: SnackBarAction(
-          label: 'Sepete Git',
-          textColor: Colors.white,
-          onPressed: () {
-            // Sepet sayfasına yönlendirme
-            Navigator.pushNamed(context, '/cart');
-          },
+  void _copyCouponCode(String couponCode) async {
+    await Clipboard.setData(ClipboardData(text: couponCode));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Kupon kodu kopyalandı: $couponCode'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: 'Sepete Git',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.pushNamed(context, AppRoutes.main);
+            },
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 }

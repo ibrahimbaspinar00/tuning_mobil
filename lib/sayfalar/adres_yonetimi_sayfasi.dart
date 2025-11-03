@@ -107,6 +107,7 @@ class _AdresYonetimiSayfasiState extends State<AdresYonetimiSayfasi> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Adreslerim'),

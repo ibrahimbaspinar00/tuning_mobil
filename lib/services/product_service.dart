@@ -14,6 +14,33 @@ class ProductService {
 
   // ==================== ÜRÜN YÖNETİMİ ====================
 
+  /// Tüm ürünleri getir (Stream - anlık güncelleme)
+  Stream<List<Product>> getAllProductsStream() {
+    try {
+      return _firestore
+          .collection('products')
+          .where('isActive', isEqualTo: true)
+          .limit(50) // Limit ekleyerek performansı artır
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          try {
+            final data = doc.data();
+            data['id'] = doc.id;
+            return Product.fromMap(data);
+          } catch (e) {
+            debugPrint('Error parsing product ${doc.id}: $e');
+            return null;
+          }
+        }).where((product) => product != null).cast<Product>().toList();
+      });
+    } catch (e) {
+      debugPrint('Error getting products stream: $e');
+      // Hata durumunda boş stream döndür
+      return Stream.value([]);
+    }
+  }
+
   /// Tüm ürünleri getir
   Future<List<Product>> getAllProducts() async {
     try {

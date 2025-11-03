@@ -31,6 +31,33 @@ class AppNotification {
   /// Firestore'dan model oluştur
   factory AppNotification.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    
+    // createdAt için güvenli parsing
+    DateTime createdAt;
+    if (data['createdAt'] != null) {
+      if (data['createdAt'] is Timestamp) {
+        createdAt = (data['createdAt'] as Timestamp).toDate();
+      } else if (data['createdAt'] is DateTime) {
+        createdAt = data['createdAt'] as DateTime;
+      } else {
+        // Fallback: şimdi
+        createdAt = DateTime.now();
+      }
+    } else {
+      // createdAt yoksa şimdi kullan
+      createdAt = DateTime.now();
+    }
+    
+    // scheduledAt için güvenli parsing
+    DateTime? scheduledAt;
+    if (data['scheduledAt'] != null) {
+      if (data['scheduledAt'] is Timestamp) {
+        scheduledAt = (data['scheduledAt'] as Timestamp).toDate();
+      } else if (data['scheduledAt'] is DateTime) {
+        scheduledAt = data['scheduledAt'] as DateTime;
+      }
+    }
+    
     return AppNotification(
       id: doc.id,
       title: data['title'] ?? '',
@@ -39,10 +66,8 @@ class AppNotification {
       type: data['type'] ?? 'system',
       data: data['data'],
       userId: data['userId'],
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      scheduledAt: data['scheduledAt'] != null 
-          ? (data['scheduledAt'] as Timestamp).toDate() 
-          : null,
+      createdAt: createdAt,
+      scheduledAt: scheduledAt,
       isRead: data['isRead'] ?? false,
       actionUrl: data['actionUrl'],
     );

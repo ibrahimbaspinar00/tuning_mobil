@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../model/admin_product.dart';
+import '../model/product.dart';
 
 class AIRecommendationService {
   static final AIRecommendationService _instance = AIRecommendationService._internal();
@@ -46,9 +46,9 @@ class AIRecommendationService {
   }
 
   /// AI destekli ürün önerileri
-  Future<List<AdminProduct>> getRecommendations(
+  Future<List<Product>> getRecommendations(
     String userId,
-    List<AdminProduct> allProducts, {
+    List<Product> allProducts, {
     int limit = 10,
   }) async {
     try {
@@ -174,7 +174,7 @@ class AIRecommendationService {
   }
 
   /// Kategori bazlı öneriler
-  List<AdminProduct> _getCategoryRecommendations(String userId, List<AdminProduct> allProducts) {
+  List<Product> _getCategoryRecommendations(String userId, List<Product> allProducts) {
     final userCategories = _userCategories[userId] ?? [];
     if (userCategories.isEmpty) return [];
     
@@ -185,7 +185,7 @@ class AIRecommendationService {
   }
 
   /// Fiyat bazlı öneriler
-  List<AdminProduct> _getPriceRecommendations(String userId, List<AdminProduct> allProducts) {
+  List<Product> _getPriceRecommendations(String userId, List<Product> allProducts) {
     // Kullanıcının ortalama fiyat tercihini hesapla
     final userBehaviors = _userBehavior[userId] ?? [];
     final prices = <double>[];
@@ -213,15 +213,15 @@ class AIRecommendationService {
   }
 
   /// Önerileri birleştir ve skorla
-  List<AdminProduct> _combineRecommendations(
-    List<AdminProduct> allProducts,
+  List<Product> _combineRecommendations(
+    List<Product> allProducts,
     Map<String, double> userPreferences,
     List<String> similarUsers,
     List<String> popularProducts,
-    List<AdminProduct> categoryRecommendations,
-    List<AdminProduct> priceRecommendations,
+    List<Product> categoryRecommendations,
+    List<Product> priceRecommendations,
   ) {
-    final productScores = <AdminProduct, double>{};
+    final productScores = <Product, double>{};
     
     for (final product in allProducts) {
       double score = 0.0;
@@ -277,7 +277,7 @@ class AIRecommendationService {
   }
 
   /// Fallback öneriler
-  List<AdminProduct> _getFallbackRecommendations(List<AdminProduct> allProducts, int limit) {
+  List<Product> _getFallbackRecommendations(List<Product> allProducts, int limit) {
     // Popüler ürünleri döndür
     final popularProducts = allProducts.where((product) => 
         _productViews[product.id] != null && _productViews[product.id]! > 0

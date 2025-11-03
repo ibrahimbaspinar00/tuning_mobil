@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../model/product.dart';
-import '../services/admin_service.dart';
+import '../services/product_service.dart';
 import '../widgets/optimized_image.dart';
 import '../widgets/professional_components.dart';
-import '../utils/professional_animations.dart';
-import 'urun_detay_sayfasi.dart';
+import '../config/app_routes.dart';
 
 class KategorilerSayfasi extends StatefulWidget {
   final List<Product> favoriteProducts;
@@ -95,18 +94,11 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
     setState(() => _isLoading = true);
     
     try {
-      final products = await AdminService().getProducts().first;
+      final productService = ProductService();
+      final products = await productService.getAllProducts();
       if (!mounted) return;
       setState(() {
-        _allProducts = products.map((adminProduct) => Product(
-          id: adminProduct.id,
-          name: adminProduct.name,
-          price: adminProduct.price,
-          description: adminProduct.description,
-          imageUrl: adminProduct.imageUrl,
-          category: adminProduct.category,
-          stock: adminProduct.stock,
-        )).toList();
+        _allProducts = products;
         _filteredProducts = List.from(_allProducts);
         _isLoading = false;
       });
@@ -118,7 +110,6 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
       _filteredProducts = [];
     }
   }
-
 
   void _filterProducts() {
     List<Product> filtered = _allProducts;
@@ -162,7 +153,13 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+    final isDesktop = screenWidth >= 1024;
+    
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: ProfessionalComponents.createAppBar(
         title: 'Kategoriler',
@@ -175,53 +172,76 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
               });
             },
             icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
+            tooltip: _showFilters ? 'Filtreleri Gizle' : 'Filtreleri Göster',
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Kategori seçimi
-          _buildCategorySelector(),
-          
-          // Filtreler
-          if (_showFilters) _buildFilters(),
-          
-          // Ürün listesi
-          Expanded(
-            child: _isLoading
-                ? ProfessionalComponents.createLoadingIndicator(
-                    message: 'Ürünler yükleniyor...',
-                  )
-                : _filteredProducts.isEmpty
-                    ? ProfessionalComponents.createEmptyState(
-                        title: 'Ürün Bulunamadı',
-                        message: 'Seçilen kriterlere uygun ürün bulunamadı.',
-                        icon: Icons.search_off,
-                        buttonText: 'Filtreleri Temizle',
-                        onButtonPressed: _clearFilters,
-                      )
-                    : _buildProductGrid(),
-          ),
-        ],
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Kategori seçimi
+                _buildCategorySelector(isSmallScreen, isTablet),
+                
+                // Filtreler
+                if (_showFilters) 
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: _buildFilters(isSmallScreen, isTablet, constraints.maxWidth),
+                    ),
+                  ),
+                
+                // Ürün listesi
+                Expanded(
+                  child: _isLoading
+                      ? ProfessionalComponents.createLoadingIndicator(
+                          message: 'Ürünler yükleniyor...',
+                        )
+                      : _filteredProducts.isEmpty
+                          ? SingleChildScrollView(
+                              child: ProfessionalComponents.createEmptyState(
+                                title: 'Ürün Bulunamadı',
+                                message: 'Seçilen kriterlere uygun ürün bulunamadı.',
+                                icon: Icons.search_off,
+                                buttonText: 'Filtreleri Temizle',
+                                onButtonPressed: _clearFilters,
+                              ),
+                            )
+                          : _buildProductGrid(isSmallScreen, isTablet, isDesktop),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildCategorySelector() {
-    final width = MediaQuery.of(context).size.width;
-    final double itemWidth = width * 0.24;
-    final double clampedItemWidth = itemWidth.clamp(84.0, 110.0);
-
+  Widget _buildCategorySelector(bool isSmallScreen, bool isTablet) {
     return Container(
-      height: 110,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      height: isSmallScreen ? 100 : isTablet ? 115 : 120,
+      padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 6 : 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 12 : 16),
         itemCount: _categories.length,
         itemBuilder: (context, index) {
           final category = _categories[index];
           final isSelected = category.name == _selectedCategory;
+          
+          // Responsive genişlik hesaplama
+          final screenWidth = MediaQuery.of(context).size.width;
+          double itemWidth;
+          if (isSmallScreen) {
+            itemWidth = (screenWidth - 48) / 4.5; // 4.5 kategori görünür
+          } else if (isTablet) {
+            itemWidth = (screenWidth - 64) / 5.5;
+          } else {
+            itemWidth = 110;
+          }
+          itemWidth = itemWidth.clamp(75.0, 120.0);
           
           return GestureDetector(
             onTap: () {
@@ -232,15 +252,18 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
               });
             },
             child: Container(
-              width: clampedItemWidth,
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              width: itemWidth,
+              margin: EdgeInsets.only(right: isSmallScreen ? 8 : 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 6 : 10,
+                vertical: isSmallScreen ? 8 : 10,
+              ),
               decoration: BoxDecoration(
                 color: isSelected ? category.color : Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected ? category.color : Colors.grey[300]!,
-                  width: 2,
+                  width: isSelected ? 2 : 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -252,32 +275,37 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     category.icon,
                     color: isSelected ? Colors.white : category.color,
-                    size: clampedItemWidth <= 90 ? 26 : 30,
+                    size: isSmallScreen ? 24 : isTablet ? 28 : 30,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    category.name,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black87,
-                      fontSize: clampedItemWidth <= 90 ? 11 : 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${category.productCount}',
-                    style: TextStyle(
-                      color: isSelected ? Colors.white70 : Colors.grey,
-                      fontSize: clampedItemWidth <= 90 ? 9 : 10,
+                  SizedBox(height: isSmallScreen ? 4 : 6),
+                  Flexible(
+                    child: Text(
+                      category.name,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black87,
+                        fontSize: isSmallScreen ? 10 : isTablet ? 11 : 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (!isSmallScreen) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '${category.productCount}',
+                      style: TextStyle(
+                        color: isSelected ? Colors.white70 : Colors.grey[600],
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -287,235 +315,340 @@ class _KategorilerSayfasiState extends State<KategorilerSayfasi> {
     );
   }
 
-  Widget _buildFilters() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool narrow = constraints.maxWidth < 360;
-        return Container(
-          padding: EdgeInsets.all(narrow ? 12 : 16),
-          color: Colors.white,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildFilters(bool isSmallScreen, bool isTablet, double maxWidth) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : isTablet ? 14 : 16),
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Başlık
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Sıralama
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  const Text('Sırala:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: 160,
-                      maxWidth: constraints.maxWidth - 40,
-                    ),
-                    child: DropdownButtonFormField<String>(
-                      value: _sortBy,
-                      isDense: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        isDense: true,
-                      ),
-                      items: _sortOptions.map((option) {
-                        return DropdownMenuItem(
-                          value: option,
-                          child: Text(
-                            option,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (!mounted) return;
-                        setState(() {
-                          _sortBy = value!;
-                          _filterProducts();
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              Text(
+                'Filtreler',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: isSmallScreen ? 16 : 18,
+                  color: Colors.grey[800],
+                ),
               ),
-          
-          const SizedBox(height: 16),
-          
-              // Fiyat aralığı
-              const SizedBox(height: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Fiyat: ${_minPrice.toInt()}₺ - ${_maxPrice.toInt()}₺',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  RangeSlider(
-                    values: RangeValues(_minPrice, _maxPrice),
-                    min: 0,
-                    max: 10000,
-                    divisions: 100,
-                    onChanged: (values) {
-                      if (!mounted) return;
-                      setState(() {
-                        _minPrice = values.start;
-                        _maxPrice = values.end;
-                        _filterProducts();
-                      });
-                    },
-                  ),
-                ],
+              TextButton.icon(
+                onPressed: _clearFilters,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(
+                  'Temizle',
+                  style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+                ),
               ),
             ],
           ),
-        );
-      },
+          
+          const SizedBox(height: 12),
+          
+          // Sıralama
+          Text(
+            'Sırala:',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: isSmallScreen ? 13 : 14,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: _sortBy,
+            isDense: true,
+            isExpanded: true,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 12 : 16,
+                vertical: isSmallScreen ? 10 : 12,
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+            items: _sortOptions.map((option) {
+              return DropdownMenuItem(
+                value: option,
+                child: Text(
+                  option,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 13 : 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (!mounted || value == null) return;
+              setState(() {
+                _sortBy = value;
+                _filterProducts();
+              });
+            },
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // Fiyat aralığı
+          Text(
+            'Fiyat Aralığı',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: isSmallScreen ? 13 : 14,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Text(
+                    '${_minPrice.toInt()}₺',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: isSmallScreen ? 12 : 14,
+                      color: Colors.green[700],
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  '-',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Text(
+                    '${_maxPrice.toInt()}₺',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: isSmallScreen ? 12 : 14,
+                      color: Colors.green[700],
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          RangeSlider(
+            values: RangeValues(_minPrice, _maxPrice),
+            min: 0,
+            max: 10000,
+            divisions: 100,
+            labels: RangeLabels(
+              '${_minPrice.toInt()}₺',
+              '${_maxPrice.toInt()}₺',
+            ),
+            onChanged: (values) {
+              if (!mounted) return;
+              setState(() {
+                _minPrice = values.start;
+                _maxPrice = values.end;
+                _filterProducts();
+              });
+            },
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildProductGrid() {
+  Widget _buildProductGrid(bool isSmallScreen, bool isTablet, bool isDesktop) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final crossAxisCount = screenWidth >= 900 ? 4 : screenWidth > 600 ? 3 : 2;
+    final crossAxisCount = isDesktop ? 4 : isTablet ? 3 : 2;
     final bool veryNarrow = screenWidth < 360;
-    final bool narrow = screenWidth < 400;
-    final double aspect = screenWidth >= 900
-        ? 0.9
-        : screenWidth > 600
-            ? 0.85
+    
+    // Responsive aspect ratio
+    final double aspect = isDesktop
+        ? 0.88
+        : isTablet
+            ? 0.82
             : veryNarrow
-                ? 0.70
-                : narrow
-                    ? 0.78
-                    : 0.82;
+                ? 0.68
+                : isSmallScreen
+                    ? 0.75
+                    : 0.78;
 
     return GridView.builder(
-      padding: const EdgeInsets.all(12), // Daha küçük padding
+      padding: EdgeInsets.all(isSmallScreen ? 8 : isTablet ? 12 : 16),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: aspect, // responsive aspect ratio
-        crossAxisSpacing: 8, // Daha küçük spacing
-        mainAxisSpacing: 8, // Daha küçük spacing
+        childAspectRatio: aspect,
+        crossAxisSpacing: isSmallScreen ? 6 : isTablet ? 10 : 12,
+        mainAxisSpacing: isSmallScreen ? 6 : isTablet ? 10 : 12,
       ),
       itemCount: _filteredProducts.length,
       itemBuilder: (context, index) {
         final product = _filteredProducts[index];
-        return _buildProductCard(product);
+        return _buildProductCard(product, isSmallScreen, isTablet);
       },
     );
   }
 
-  Widget _buildProductCard(Product product) {
+  Widget _buildProductCard(Product product, bool isSmallScreen, bool isTablet) {
     final isFavorite = widget.favoriteProducts.any((p) => p.id == product.id);
     final inCart = widget.cartProducts.any((p) => p.id == product.id);
 
     return ProfessionalComponents.createCard(
+      margin: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           // Ürün resmi
-          AspectRatio(
-            aspectRatio: 1,
-            child: GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  ProfessionalAnimations.createScaleRoute(
-                    UrunDetaySayfasi(
-                      product: product,
-                      onFavoriteToggle: widget.onFavoriteToggle,
-                      onAddToCart: widget.onAddToCart,
-                      onRemoveFromCart: widget.onRemoveFromCart,
-                      favoriteProducts: widget.favoriteProducts,
-                      cartProducts: widget.cartProducts,
+          Expanded(
+            flex: 3,
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: GestureDetector(
+                onTap: () {
+                  AppRoutes.navigateToProductDetail(
+                    context,
+                    product,
+                    favoriteProducts: widget.favoriteProducts,
+                    cartProducts: widget.cartProducts,
+                    onFavoriteToggle: widget.onFavoriteToggle,
+                    onAddToCart: widget.onAddToCart,
+                    onRemoveFromCart: widget.onRemoveFromCart,
+                  );
+                },
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    OptimizedImage(
+                      imageUrl: product.imageUrl,
+                      width: double.infinity,
+                      height: double.infinity,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ),
-                );
-              },
-              child: Stack(
-                children: [
-                  OptimizedImage(
-                    imageUrl: product.imageUrl,
-                    width: double.infinity,
-                    height: double.infinity,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  // Stok durumu
-                  if (product.stock < 10)
+                    // Stok durumu
+                    if (product.stock < 10)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: ProfessionalComponents.createStatusBadge(
+                          text: 'Az Stok',
+                          type: StatusType.warning,
+                          isSmall: true,
+                        ),
+                      ),
+                    // Favori butonu
                     Positioned(
-                      top: 8,
-                      left: 8,
-                      child: ProfessionalComponents.createStatusBadge(
-                        text: 'Az Stok',
-                        type: StatusType.warning,
-                        isSmall: true,
+                      top: 4,
+                      right: 4,
+                      child: IconButton(
+                        onPressed: () => widget.onFavoriteToggle(product),
+                        icon: Icon(
+                          isFavorite ? Icons.favorite : Icons.favorite_border,
+                          color: isFavorite ? Colors.red : Colors.white,
+                          size: isSmallScreen ? 18 : 20,
+                        ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black.withOpacity(0.5),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.all(isSmallScreen ? 4 : 6),
+                          minimumSize: Size(isSmallScreen ? 32 : 36, isSmallScreen ? 32 : 36),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
                     ),
-                  // Favori butonu
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: IconButton(
-                      onPressed: () => widget.onFavoriteToggle(product),
-                      icon: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorite ? Colors.red : Colors.white,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black.withOpacity(0.5),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
           
-          const SizedBox(height: 8),
+          SizedBox(height: isSmallScreen ? 6 : 8),
           
           // Ürün bilgileri
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+          Flexible(
+            flex: 2,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 4 : 6,
+                vertical: 2,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Ürün adı
+                  Flexible(
+                    child: Text(
+                      product.name,
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 12 : isTablet ? 14 : 15,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${product.price.toStringAsFixed(2)} ₺',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
+                  SizedBox(height: isSmallScreen ? 3 : 4),
+                  
+                  // Fiyat
+                  Text(
+                    '${product.price.toStringAsFixed(2)} ₺',
+                    style: TextStyle(
+                      fontSize: isSmallScreen ? 13 : isTablet ? 15 : 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                      height: 1.0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ProfessionalComponents.createButton(
-                    text: inCart ? 'Sepette' : 'Sepete Ekle',
-                    onPressed: () => widget.onAddToCart(product),
-                    type: inCart ? ButtonType.success : ButtonType.primary,
-                    size: ButtonSize.small,
-                    icon: inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                  SizedBox(height: isSmallScreen ? 4 : 6),
+                  
+                  // Sepete ekle butonu
+                  SizedBox(
+                    width: double.infinity,
+                    child: ProfessionalComponents.createButton(
+                      text: inCart ? 'Sepette' : 'Sepete Ekle',
+                      onPressed: () => widget.onAddToCart(product),
+                      type: inCart ? ButtonType.success : ButtonType.primary,
+                      size: isSmallScreen ? ButtonSize.small : ButtonSize.medium,
+                      icon: inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],

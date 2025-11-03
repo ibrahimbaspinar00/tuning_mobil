@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+/// Kullanıcı koleksiyon modeli
 class Collection {
   final String id;
   final String name;
@@ -49,13 +52,8 @@ class Collection {
     if (value == null) return DateTime.now();
     
     // Firebase Timestamp tipini kontrol et
-    if (value.toString().contains('Timestamp')) {
-      try {
-        // Timestamp'i DateTime'a çevir
-        return DateTime.fromMillisecondsSinceEpoch(value.millisecondsSinceEpoch);
-      } catch (e) {
-        return DateTime.now();
-      }
+    if (value is Timestamp) {
+      return value.toDate();
     }
     
     // String tipini kontrol et

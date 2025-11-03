@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ThemeService {
   static const String _themeKey = 'theme_mode';
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
   
   static ThemeMode _themeMode = ThemeMode.system;
   
@@ -12,16 +16,56 @@ class ThemeService {
   static bool get isLightMode => _themeMode == ThemeMode.light;
   static bool get isSystemMode => _themeMode == ThemeMode.system;
   
-  // Tema değiştirme
+  // Tema değiştirme (Firebase + Local)
   static Future<void> setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
+    
+    // Local'e kaydet (fallback için)
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeKey, mode.toString());
+    
+    // Firebase'e kaydet
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        await _firestore.collection('users').doc(user.uid).set({
+          'themeMode': mode.toString(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Error saving theme to Firebase: $e');
+      }
+    }
   }
   
-  
-  // Tema yükleme
+  // Tema yükleme (Firebase'den, yoksa local'den)
   static Future<void> loadTheme() async {
+    final user = _auth.currentUser;
+    
+    if (user != null) {
+      try {
+        // Önce Firebase'den yükle
+        final doc = await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists && doc.data()?['themeMode'] != null) {
+          final themeString = doc.data()!['themeMode'] as String;
+          _themeMode = ThemeMode.values.firstWhere(
+            (mode) => mode.toString() == themeString,
+            orElse: () => ThemeMode.system,
+          );
+          
+          // Local'e de kaydet (senkronizasyon için)
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_themeKey, themeString);
+          
+          debugPrint('Theme loaded from Firebase: $_themeMode');
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error loading theme from Firebase: $e');
+      }
+    }
+    
+    // Firebase'de yoksa local'den yükle
     final prefs = await SharedPreferences.getInstance();
     final themeString = prefs.getString(_themeKey);
     if (themeString != null) {
@@ -29,6 +73,18 @@ class ThemeService {
         (mode) => mode.toString() == themeString,
         orElse: () => ThemeMode.system,
       );
+      
+      // Local'de varsa Firebase'e de kaydet
+      if (user != null) {
+        try {
+          await _firestore.collection('users').doc(user.uid).set({
+            'themeMode': themeString,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('Error syncing theme to Firebase: $e');
+        }
+      }
     }
   }
   

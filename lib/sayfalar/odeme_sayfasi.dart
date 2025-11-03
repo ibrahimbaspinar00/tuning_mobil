@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../widgets/no_overflow.dart';
 import '../model/product.dart';
-import '../services/admin_service.dart';
 import '../services/user_auth_service.dart';
 import '../services/discount_wheel_service.dart';
+import '../services/order_service.dart';
+import '../services/payment_service.dart';
 import '../widgets/error_handler.dart';
-import 'kayit_sayfasi.dart';
+import '../config/app_routes.dart';
 import 'adres_yonetimi_sayfasi.dart';
 import 'odeme_yontemleri_sayfasi.dart';
 
@@ -58,12 +59,16 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
   Adres? _selectedSavedAddress;
   OdemeYontemi? _selectedSavedCard;
   
+  // Ödeme servisi
+  final PaymentService _paymentService = PaymentService();
+  
   // Kredi kartı bilgileri
   final _cardNumberController = TextEditingController();
   final _cardNameController = TextEditingController();
   final _expiryController = TextEditingController();
   final _cvvController = TextEditingController();
   final _couponController = TextEditingController();
+  final _notesController = TextEditingController();
   
 
   @override
@@ -99,6 +104,8 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
     _cardNameController.dispose();
     _expiryController.dispose();
     _cvvController.dispose();
+    _couponController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -114,8 +121,6 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
   Future<void> _loadSavedAddresses() async {
     if (!_isGuestUser) {
       try {
-        // TODO: Implement getUserAddresses method in AdminService
-        // final addresses = await AdminService().getUserAddresses();
         // if (addresses.isNotEmpty) {
         //   setState(() {
         //     _selectedSavedAddress = addresses.first;
@@ -309,8 +314,6 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
   Future<void> _loadSavedPaymentMethods() async {
     if (!_isGuestUser) {
       try {
-        // TODO: Implement getUserPaymentMethods method in AdminService
-        // final paymentMethods = await AdminService().getUserPaymentMethods();
         // if (paymentMethods.isNotEmpty) {
         //   setState(() {
         //     _selectedSavedCard = paymentMethods.first;
@@ -334,6 +337,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
   Widget build(BuildContext context) {
     
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       appBar: AppBar(
         title: const Text(
           'Ödeme',
@@ -451,10 +455,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
           if (_isGuestUser)
             TextButton(
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const KayitSayfasi()),
-                ).then((_) => _checkUserLoginStatus());
+                AppRoutes.navigateToRegister(context).then((_) => _checkUserLoginStatus());
               },
               child: const Text('Kayıt Ol'),
             ),
@@ -847,8 +848,10 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
               onChanged: (value) {
                 setState(() {
                   _selectedPaymentMethod = value!;
-                  // Artık inline kart formu yok; sadece kayıtlı kart seçimi
-                  _showCardForm = false;
+                  // Kredi kartı seçildiğinde formu göster
+                  if (!_isGuestUser && _selectedSavedCard == null) {
+                    _showCardForm = true;
+                  }
                   _showBankTransfer = false;
                 });
               },
@@ -1261,23 +1264,27 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
 
   // Ödeme butonu davranışı
   Future<void> _onPayPressed() async {
+    if (!_formKey.currentState!.validate()) return;
+
     if (_selectedPaymentMethod == 'credit_card') {
-      if (_isGuestUser) {
-        _showGuestUserDialog();
-        return;
-      }
-      if (_selectedSavedCard == null) {
-        ErrorHandler.showError(context, 'Lütfen kayıtlı bir kart seçin');
-        return;
+      if (_isGuestUser || (_selectedSavedCard == null && !_showCardForm)) {
+        // Kart formunu göster
+        setState(() {
+          _showCardForm = true;
+        });
+        if (_cardNumberController.text.isEmpty ||
+            _cardNameController.text.isEmpty ||
+            _expiryController.text.isEmpty ||
+            _cvvController.text.isEmpty) {
+          ErrorHandler.showError(context, 'Lütfen kart bilgilerini doldurun');
+          return;
+        }
       }
     }
 
-    if (_selectedSavedAddress == null) {
-      // Adres seçimi zorunlu, misafir için de kendi girdikleri adres geçerli olacak
-      if (_addressController.text.trim().isEmpty) {
-        ErrorHandler.showError(context, 'Lütfen teslimat adresini doldurun veya seçin');
-        return;
-      }
+    if (_selectedSavedAddress == null && _addressController.text.trim().isEmpty) {
+      ErrorHandler.showError(context, 'Lütfen teslimat adresini doldurun veya seçin');
+      return;
     }
 
     await _processPayment();
@@ -1294,6 +1301,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
     final expiryController = TextEditingController();
     final cvvController = TextEditingController();
 
+    final parentContext = context;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1372,9 +1380,14 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
                   _cvvController.text = cvvController.text;
                   
                   Navigator.of(context).pop();
-                  ErrorHandler.showSuccess(context, 'Kart başarıyla kaydedildi!');
+                  // Dialog context deaktive olacağı için parent context ile göster
+                  Future.microtask(() {
+                    if (mounted) {
+                      ErrorHandler.showSuccess(parentContext, 'Kart başarıyla kaydedildi!');
+                    }
+                  });
                 } else {
-                  ErrorHandler.showError(context, 'Lütfen tüm alanları doldurun');
+                  ErrorHandler.showError(parentContext, 'Lütfen tüm alanları doldurun');
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -1405,10 +1418,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const KayitSayfasi()),
-              ).then((_) => _checkUserLoginStatus());
+              AppRoutes.navigateToRegister(context).then((_) => _checkUserLoginStatus());
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue[600],
@@ -1427,36 +1437,172 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
     setState(() => _isLoading = true);
 
     try {
-      final adminService = AdminService();
-      
-      // Müşteri bilgilerini hazırla
-      final customerInfo = {
-        'name': _nameController.text,
-        'email': _emailController.text,
-        'phone': _phoneController.text,
-        'address': _addressController.text,
-        'isGuest': _isGuestUser.toString(),
-      };
+      final orderService = OrderService();
+      final totalAmount = _total; // Kupon indirimini de içeren toplam
 
-      // Ürünleri Firebase formatına çevir
-      final orderProducts = widget.cartProducts.map((product) => {
-        'name': product.name,
-        'price': product.price,
-        'quantity': product.quantity,
-        'imageUrl': product.imageUrl,
-      }).toList();
+      // Stok kontrolü
+      for (final product in widget.cartProducts) {
+        if (product.quantity > product.stock) {
+          if (mounted) {
+            ErrorHandler.showError(context, '${product.name} için yeterli stok yok. Mevcut stok: ${product.stock}');
+          }
+          setState(() => _isLoading = false);
+          return;
+        }
+      }
 
-      final result = await adminService.createOrderWithStockCheck(orderProducts, customerInfo);
+      PaymentResult paymentResult;
 
-      if (result['success']) {
-        // Başarılı sipariş
+      // Ödeme yöntemine göre işlem
+      if (_selectedPaymentMethod == 'credit_card') {
+        if (_selectedSavedCard != null) {
+          // Kayıtlı kart ile ödeme
+          paymentResult = await _paymentService.processCardPayment(
+            cardNumber: _selectedSavedCard!.number,
+            cardHolderName: _selectedSavedCard!.name,
+            expiryDate: _selectedSavedCard!.expiryDate,
+            cvv: '***',
+            amount: totalAmount,
+            description: 'Sipariş ödemesi - ${widget.cartProducts.length} ürün',
+          );
+        } else if (_cardNumberController.text.isNotEmpty) {
+          // Yeni kart ile ödeme
+          paymentResult = await _paymentService.processCardPayment(
+            cardNumber: _cardNumberController.text,
+            cardHolderName: _cardNameController.text,
+            expiryDate: _expiryController.text,
+            cvv: _cvvController.text,
+            amount: totalAmount,
+            description: 'Sipariş ödemesi - ${widget.cartProducts.length} ürün',
+          );
+        } else {
+          ErrorHandler.showError(context, 'Lütfen kart bilgilerini girin');
+          setState(() => _isLoading = false);
+          return;
+        }
+
+        if (!paymentResult.success) {
+          if (mounted) {
+            ErrorHandler.showError(context, paymentResult.message);
+          }
+          setState(() => _isLoading = false);
+          return;
+        }
+      } else if (_selectedPaymentMethod == 'cash_on_delivery') {
+        paymentResult = PaymentResult(
+          success: true,
+          paymentId: DateTime.now().millisecondsSinceEpoch.toString(),
+          message: 'Kapıda ödeme kaydı oluşturuldu',
+        );
+      } else if (_selectedPaymentMethod == 'bank_transfer') {
+        paymentResult = PaymentResult(
+          success: true,
+          paymentId: DateTime.now().millisecondsSinceEpoch.toString(),
+          message: 'Banka havalesi kaydı oluşturuldu',
+        );
+      } else {
+        paymentResult = PaymentResult(
+          success: false,
+          message: 'Geçersiz ödeme yöntemi',
+        );
+      }
+
+      // Ödeme başarılı ise siparişi oluştur
+      if (paymentResult.success && paymentResult.paymentId != null) {
+        String fullAddress = _addressController.text.trim();
+        if (_cityController.text.trim().isNotEmpty) {
+          fullAddress += ', ${_cityController.text.trim()}';
+        }
+        if (_districtController.text.trim().isNotEmpty) {
+          fullAddress += ', ${_districtController.text.trim()}';
+        }
+        if (_postalCodeController.text.trim().isNotEmpty) {
+          fullAddress += ' - ${_postalCodeController.text.trim()}';
+        }
+
+        final orderId = await orderService.createOrder(
+          products: widget.cartProducts,
+          totalAmount: totalAmount,
+          customerName: _nameController.text,
+          customerEmail: _emailController.text,
+          customerPhone: _phoneController.text,
+          shippingAddress: fullAddress.isNotEmpty ? fullAddress : _addressController.text,
+          paymentMethod: _getPaymentMethodName(_selectedPaymentMethod),
+          notes: _notesController.text.isNotEmpty 
+              ? '${_notesController.text}${_appliedCoupon.isNotEmpty ? ' | Kupon: $_appliedCoupon' : ''}'
+              : (_appliedCoupon.isNotEmpty ? 'Kupon: $_appliedCoupon' : ''),
+        );
+
+        // Ödeme kaydını sipariş ile ilişkilendir
+        if (orderId.isNotEmpty && paymentResult.paymentId != null) {
+          await _paymentService.processPayment(
+            paymentData: {'method': _selectedPaymentMethod},
+            amount: totalAmount,
+            description: 'Sipariş #$orderId',
+            orderId: orderId,
+          );
+        }
+
         if (mounted) {
-          Navigator.of(context).pop();
-          ErrorHandler.showSuccess(context, 'Siparişiniz başarıyla verildi!');
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green[600], size: 32),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Ödeme Başarılı!', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Sipariş No: $orderId'),
+                  const SizedBox(height: 8),
+                  Text('Tutar: ₺${totalAmount.toStringAsFixed(2)}'),
+                  const SizedBox(height: 8),
+                  Text('Ödeme Yöntemi: ${_getPaymentMethodName(_selectedPaymentMethod)}'),
+                  if (_selectedPaymentMethod == 'bank_transfer') ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange[200]!),
+                      ),
+                      child: const Text(
+                        'Banka havalesi yaptıktan sonra siparişiniz onaylanacaktır.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.main, (route) => false);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[600],
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Tamam'),
+                ),
+              ],
+            ),
+          );
         }
       } else {
         if (mounted) {
-          ErrorHandler.showError(context, result['error'] ?? 'Sipariş verilirken hata oluştu');
+          ErrorHandler.showError(context, paymentResult.message);
         }
       }
     } catch (e) {
@@ -1467,6 +1613,19 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  String _getPaymentMethodName(String method) {
+    switch (method) {
+      case 'credit_card':
+        return 'Kredi Kartı';
+      case 'cash_on_delivery':
+        return 'Kapıda Ödeme';
+      case 'bank_transfer':
+        return 'Banka Havalesi';
+      default:
+        return 'Bilinmeyen';
     }
   }
 }

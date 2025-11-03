@@ -14,27 +14,13 @@ class NoOverflow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Klavye performansı için LayoutBuilder kaldırıldı
+    // viewInsets kullanımı gereksiz rebuild'lere neden oluyordu
     return SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final media = MediaQuery.of(context);
-          final double bottomInset = media.viewInsets.bottom; // keyboard, etc.
-          final EdgeInsetsGeometry resolvedPadding = EdgeInsets.only(
-            bottom: (bottomInset > 0 ? bottomInset : 0) + 16,
-          ).add(padding ?? EdgeInsets.zero);
-
-          return SingleChildScrollView(
-            padding: resolvedPadding,
-            physics: const ClampingScrollPhysics(),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight,
-                minWidth: constraints.maxWidth,
-              ),
-              child: child,
-            ),
-          );
-        },
+      child: SingleChildScrollView(
+        padding: padding ?? const EdgeInsets.only(bottom: 16),
+        physics: const ClampingScrollPhysics(),
+        child: child,
       ),
     );
   }

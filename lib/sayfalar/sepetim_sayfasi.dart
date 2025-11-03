@@ -7,7 +7,7 @@ import '../widgets/optimized_image.dart';
 import '../widgets/professional_components.dart';
 import '../utils/professional_animations.dart';
 import '../utils/professional_error_handler.dart';
-import 'odeme_sayfasi.dart';
+import '../config/app_routes.dart';
 
 class SepetimSayfasi extends StatefulWidget {
   final List<Product> cartProducts;
@@ -35,7 +35,6 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
   double _couponDiscount = 0.0;
   bool _isCouponApplied = false;
   double _shippingCost = 25.0; // Sabit kargo ücreti
-  bool _isLoading = false;
   
   // Services
   final FirebaseDataService _firebaseDataService = FirebaseDataService();
@@ -148,8 +147,6 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
       return;
     }
 
-    setState(() => _isLoading = true);
-
     try {
       // Kullanıcı bilgilerini al
       final userProfile = await _firebaseDataService.getUserProfile();
@@ -172,8 +169,6 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
       }
 
       if (mounted) {
-        setState(() => _isLoading = false);
-        
         ProfessionalErrorHandler.showSuccess(
           context: context,
           title: 'Sipariş Oluşturuldu!',
@@ -181,22 +176,17 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
         );
 
         // Ödeme sayfasına yönlendir
-        Navigator.push(
+        AppRoutes.navigateToPayment(
           context,
-          ProfessionalAnimations.createSlideRoute(
-            OdemeSayfasi(
-              cartProducts: widget.cartProducts,
-              appliedCoupon: _appliedCoupon,
-              couponDiscount: _couponDiscount,
-              isCouponApplied: _isCouponApplied,
-              orderId: orderId,
-            ),
-          ),
+          widget.cartProducts,
+          appliedCoupon: _appliedCoupon,
+          couponDiscount: _couponDiscount,
+          isCouponApplied: _isCouponApplied,
+          orderId: orderId,
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
         ProfessionalErrorHandler.showError(
           context: context,
           title: 'Sipariş Hatası',
@@ -209,6 +199,7 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Sepetim'),

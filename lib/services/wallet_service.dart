@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class WalletService {
   static const String _balanceKey = 'wallet_balance';
   static const String _transactionsKey = 'wallet_transactions';
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
   
   static double _currentBalance = 0.0;
   static List<WalletTransaction> _transactions = [];
@@ -17,8 +21,62 @@ class WalletService {
   double get currentBalance => _currentBalance;
   List<WalletTransaction> get transactions => List.from(_transactions);
   
-  // Initialize wallet
+  // Initialize wallet (Firebase'den yükle, yoksa local'den)
   Future<void> initialize() async {
+    final user = _auth.currentUser;
+    
+    if (user != null) {
+      try {
+        // Önce Firebase'den yükle
+        final walletDoc = await _firestore.collection('users').doc(user.uid).collection('wallet').doc('balance').get();
+        
+        if (walletDoc.exists && walletDoc.data()?['balance'] != null) {
+          _currentBalance = (walletDoc.data()!['balance'] as num).toDouble();
+        } else {
+          _currentBalance = 0.0;
+        }
+        
+        // Transaction'ları yükle
+        final transactionsSnapshot = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('wallet')
+            .doc('transactions')
+            .collection('history')
+            .orderBy('timestamp', descending: true)
+            .limit(100)
+            .get();
+        
+        _transactions = transactionsSnapshot.docs.map((doc) {
+          final data = doc.data();
+          return WalletTransaction(
+            id: doc.id,
+            amount: (data['amount'] as num).toDouble(),
+            type: TransactionType.values.firstWhere(
+              (e) => e.toString().split('.').last == data['type'],
+              orElse: () => TransactionType.deposit,
+            ),
+            paymentMethod: data['paymentMethod'] ?? '',
+            description: data['description'] ?? '',
+            timestamp: (data['timestamp'] as Timestamp).toDate(),
+            status: TransactionStatus.values.firstWhere(
+              (e) => e.toString().split('.').last == data['status'],
+              orElse: () => TransactionStatus.completed,
+            ),
+          );
+        }).toList();
+        
+        // Local'e de kaydet (offline için)
+        await _saveToLocalStorage();
+        
+        debugPrint('Wallet initialized from Firebase with balance: ${_currentBalance.toStringAsFixed(2)}₺');
+        return;
+      } catch (e) {
+        debugPrint('Error loading wallet from Firebase: $e');
+      }
+    }
+    
+    // Firebase'de yoksa veya hata varsa local'den yükle
     try {
       final prefs = await SharedPreferences.getInstance();
       _currentBalance = prefs.getDouble(_balanceKey) ?? 0.0;
@@ -28,7 +86,12 @@ class WalletService {
         WalletTransaction.fromJson(json)
       ).toList();
       
-      debugPrint('Wallet initialized with balance: ${_currentBalance.toStringAsFixed(2)}₺');
+      // Local'de varsa Firebase'e senkronize et
+      if (user != null && _currentBalance > 0) {
+        await _saveToFirebase();
+      }
+      
+      debugPrint('Wallet initialized from local storage with balance: ${_currentBalance.toStringAsFixed(2)}₺');
     } catch (e) {
       debugPrint('Error initializing wallet: $e');
     }
@@ -39,8 +102,9 @@ class WalletService {
     try {
       if (amount <= 0) return false;
       
+      final transactionId = DateTime.now().millisecondsSinceEpoch.toString();
       final transaction = WalletTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: transactionId,
         amount: amount,
         type: TransactionType.deposit,
         paymentMethod: paymentMethod,
@@ -52,8 +116,9 @@ class WalletService {
       _currentBalance += amount;
       _transactions.insert(0, transaction); // Add to beginning
       
-      // Save to storage
-      await _saveToStorage();
+      // Save to Firebase and local
+      await _saveToFirebase();
+      await _saveToLocalStorage();
       
       debugPrint('Added ${amount.toStringAsFixed(2)}₺ to wallet. New balance: ${_currentBalance.toStringAsFixed(2)}₺');
       return true;
@@ -68,8 +133,9 @@ class WalletService {
     try {
       if (amount <= 0 || amount > _currentBalance) return false;
       
+      final transactionId = DateTime.now().millisecondsSinceEpoch.toString();
       final transaction = WalletTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: transactionId,
         amount: amount,
         type: TransactionType.withdrawal,
         paymentMethod: 'Cüzdan',
@@ -81,7 +147,9 @@ class WalletService {
       _currentBalance -= amount;
       _transactions.insert(0, transaction);
       
-      await _saveToStorage();
+      // Save to Firebase and local
+      await _saveToFirebase();
+      await _saveToLocalStorage();
       
       debugPrint('Spent ${amount.toStringAsFixed(2)}₺ from wallet. New balance: ${_currentBalance.toStringAsFixed(2)}₺');
       return true;
@@ -109,8 +177,59 @@ class WalletService {
     return _currentBalance >= amount;
   }
   
-  // Save to storage
-  Future<void> _saveToStorage() async {
+  // Save to Firebase
+  Future<void> _saveToFirebase() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    
+    try {
+      // Balance'ı kaydet
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('wallet')
+          .doc('balance')
+          .set({
+        'balance': _currentBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Son 100 transaction'ı kaydet
+      final batch = _firestore.batch();
+      final transactionsRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('wallet')
+          .doc('transactions')
+          .collection('history');
+      
+      // Önce mevcut transaction'ları temizle (son 100'ü saklamak için)
+      final existingTransactions = await transactionsRef.limit(100).get();
+      for (final doc in existingTransactions.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      // Yeni transaction'ları ekle
+      for (final transaction in _transactions.take(100)) {
+        final docRef = transactionsRef.doc(transaction.id);
+        batch.set(docRef, {
+          'amount': transaction.amount,
+          'type': transaction.type.toString().split('.').last,
+          'paymentMethod': transaction.paymentMethod,
+          'description': transaction.description,
+          'timestamp': Timestamp.fromDate(transaction.timestamp),
+          'status': transaction.status.toString().split('.').last,
+        });
+      }
+      
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Error saving wallet to Firebase: $e');
+    }
+  }
+  
+  // Save to local storage (fallback)
+  Future<void> _saveToLocalStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble(_balanceKey, _currentBalance);
@@ -118,13 +237,44 @@ class WalletService {
       final transactionsJson = _transactions.map((t) => t.toJson()).toList();
       await prefs.setStringList(_transactionsKey, transactionsJson);
     } catch (e) {
-      debugPrint('Error saving wallet data: $e');
+      debugPrint('Error saving wallet data to local storage: $e');
     }
   }
   
   // Clear all data (for testing)
   Future<void> clearAllData() async {
     try {
+      final user = _auth.currentUser;
+      
+      // Firebase'den temizle
+      if (user != null) {
+        try {
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('wallet')
+              .doc('balance')
+              .delete();
+          
+          final transactionsSnapshot = await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('wallet')
+              .doc('transactions')
+              .collection('history')
+              .get();
+          
+          final batch = _firestore.batch();
+          for (final doc in transactionsSnapshot.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+        } catch (e) {
+          debugPrint('Error clearing wallet from Firebase: $e');
+        }
+      }
+      
+      // Local'den temizle
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_balanceKey);
       await prefs.remove(_transactionsKey);

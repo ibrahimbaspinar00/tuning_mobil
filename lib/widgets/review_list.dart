@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'dart:typed_data';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../model/product_review.dart';
 import '../services/review_service.dart';
 import 'star_rating.dart';
+import 'review_form.dart';
 
 class ReviewList extends StatefulWidget {
   final String productId;
@@ -27,30 +30,103 @@ class _ReviewListState extends State<ReviewList> {
   @override
   void initState() {
     super.initState();
-    if (widget.reviews != null) {
-      _reviews = widget.reviews!;
-      _isLoading = false;
-    } else {
+    _loadReviews();
+  }
+
+  @override
+  void didUpdateWidget(ReviewList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    bool shouldReload = false;
+    
+    // Eğer reviews prop'u değiştiyse güncelle
+    if (widget.reviews != null && widget.reviews != oldWidget.reviews) {
+      final oldLength = oldWidget.reviews?.length ?? 0;
+      final newLength = widget.reviews!.length;
+      
+      debugPrint('ReviewList: Widget.reviews değişti (${oldLength} → ${newLength}), güncelleniyor...');
+      
+      // Eğer yeni yorum eklendiyse (sayı arttı), Firestore'dan da yükle
+      if (newLength > oldLength) {
+        debugPrint('ReviewList: Yeni yorum eklendi görünüyor, Firestore\'dan yeniden yüklenecek');
+        shouldReload = true;
+      } else {
+        // Sadece state'i güncelle
+        setState(() {
+          _reviews = widget.reviews!;
+          _isLoading = false;
+        });
+      }
+    } else if (widget.reviews == null && oldWidget.reviews != null) {
+      // Reviews null olduysa yeniden yükle
+      debugPrint('ReviewList: Widget.reviews null oldu, yeniden yükleniyor...');
+      shouldReload = true;
+    }
+    
+    // ProductId değiştiyse yeniden yükle
+    if (widget.productId != oldWidget.productId) {
+      debugPrint('ReviewList: ProductId değişti, yeniden yükleniyor...');
+      shouldReload = true;
+    }
+    
+    // Key değiştiyse de yeniden yükle (zorla refresh için)
+    if (widget.key != oldWidget.key) {
+      debugPrint('ReviewList: Key değişti, yeniden yükleniyor...');
+      shouldReload = true;
+    }
+    
+    if (shouldReload) {
       _loadReviews();
     }
   }
 
   Future<void> _loadReviews() async {
     try {
-      setState(() => _isLoading = true);
-      final reviews = await ReviewService.getProductReviews(widget.productId);
-      setState(() {
-        _reviews = reviews;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
+        setState(() => _isLoading = true);
+      }
+      
+      debugPrint('=== ReviewList: Yorumlar yükleniyor ===');
+      debugPrint('Product ID: ${widget.productId}');
+      
+      // Her zaman Firestore'dan yükle (güncel veri için - Source.server ile)
+      final reviews = await ReviewService.getProductReviews(widget.productId);
+      
+      debugPrint('ReviewList: Firestore\'dan ${reviews.length} yorum yüklendi');
+      
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _isLoading = false;
+        });
+        
+        debugPrint('✓ ReviewList state güncellendi: ${_reviews.length} yorum gösteriliyor');
+        
+        // Callback'i çağır (ana sayfa bilgilendirmesi için)
+        // Ama sadece gerçekten bir değişiklik varsa çağır (sonsuz döngü önlemek için)
+        // Not: Bu callback artık sadece bilgilendirme amaçlı, otomatik yenileme yapmıyor
+        // if (widget.onReviewUpdated != null) {
+        //   widget.onReviewUpdated!();
+        // }
+      }
+    } catch (e, stackTrace) {
+      debugPrint('ReviewList: Yorumlar yüklenirken hata: $e');
+      debugPrint('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Yorumlar yüklenirken hata oluştu: $e')),
+          SnackBar(
+            content: Text('Yorumlar yüklenirken hata oluştu: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
+  }
+
+  // Public metod - dışarıdan çağrılabilir
+  Future<void> refreshReviews() async {
+    await _loadReviews();
   }
 
   @override
@@ -195,8 +271,8 @@ class _ReviewListState extends State<ReviewList> {
                 radius: isSmallScreen ? 18 : 20,
                 backgroundColor: Colors.blue[100],
                 child: Text(
-                  review.userName.isNotEmpty 
-                      ? review.userName[0].toUpperCase()
+                  (review.userName.trim().isNotEmpty)
+                      ? review.userName.trim()[0].toUpperCase()
                       : 'A',
                   style: TextStyle(
                     color: Colors.blue[800],
@@ -226,11 +302,34 @@ class _ReviewListState extends State<ReviewList> {
                   ],
                 ),
               ),
-              Text(
-                _formatDate(review.createdAt),
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: isSmallScreen ? 11 : 12,
+              // Tarih ve düzenleme butonu - Expanded ile sarmala
+              Flexible(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _formatDate(review.createdAt),
+                        style: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: isSmallScreen ? 11 : 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Düzenleme butonu (sadece kullanıcının kendi yorumu için)
+                    if (FirebaseAuth.instance.currentUser != null &&
+                        FirebaseAuth.instance.currentUser!.uid == review.userId) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(Icons.edit, size: isSmallScreen ? 16 : 18, color: Colors.blue[600]),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _showEditReviewDialog(context, review),
+                        tooltip: 'Yorumu Düzenle',
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -268,21 +367,30 @@ class _ReviewListState extends State<ReviewList> {
                 itemBuilder: (context, index) {
                   return Container(
                     margin: const EdgeInsets.only(right: 8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        Uint8List.fromList(review.imageUrls[index].codeUnits),
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
+                    child: GestureDetector(
+                      onTap: () => _showImageFullScreen(context, review.imageUrls[index]),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: review.imageUrls[index],
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(
+                            width: 80,
+                            height: 80,
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Container(
                             width: 80,
                             height: 80,
                             color: Colors.grey[300],
                             child: const Icon(Icons.image_not_supported),
-                          );
-                        },
+                          ),
+                        ),
                       ),
                     ),
                   );
@@ -347,6 +455,93 @@ class _ReviewListState extends State<ReviewList> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _showImageFullScreen(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          children: [
+            Center(
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditReviewDialog(BuildContext context, ProductReview review) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.9,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Başlık
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Yorumu Düzenle',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            // Review Form
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: ReviewForm(
+                  productId: review.productId,
+                  existingReview: review,
+                  onReviewAdded: () {
+                    Navigator.pop(context); // Dialog'u kapat
+                    // Yorumları yenile
+                    if (widget.onReviewUpdated != null) {
+                      widget.onReviewUpdated!();
+                    }
+                    _loadReviews(); // Yorumları yeniden yükle
+                  },
+                  hasPurchased: true, // Düzenleme modunda zaten satın alınmış
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

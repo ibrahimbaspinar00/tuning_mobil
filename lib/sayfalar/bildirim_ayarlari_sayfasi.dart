@@ -57,6 +57,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
+        resizeToAvoidBottomInset: false, // Klavye performansı için
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
           title: const Text('Ayarlar'),
@@ -69,6 +70,7 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
       );
     }
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Bildirim Ayarları'),

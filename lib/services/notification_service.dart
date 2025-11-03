@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../model/notification.dart';
+import 'fcm_service_account_service.dart';
 
 /// Push notification servisi
 class NotificationService {
@@ -253,7 +254,7 @@ class NotificationService {
     print('🎯 Notification action: $action');
   }
 
-  /// Bildirim gönder (Admin panelinden)
+  /// Bildirim gönder (Admin panelinden) - BASİT VERSİYON
   Future<void> sendNotification({
     required String title,
     required String body,
@@ -264,6 +265,7 @@ class NotificationService {
     DateTime? scheduledAt,
   }) async {
     try {
+      // Önce Firestore'a kaydet (bildirimler listesi için)
       final notification = AppNotification(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: title,
@@ -276,7 +278,6 @@ class NotificationService {
         scheduledAt: scheduledAt,
       );
 
-      // Firestore'a kaydet
       final notificationData = notification.toFirestore();
       notificationData['status'] = 'sent';
       notificationData['sentAt'] = FieldValue.serverTimestamp();
@@ -286,9 +287,107 @@ class NotificationService {
           .doc(notification.id)
           .set(notificationData);
 
-      print('✅ Bildirim gönderildi: $title');
+      print('✅ Bildirim Firestore\'a kaydedildi: $title');
+
+      // FCM v1 API ile bildirim gönder (googleapis paketi ile)
+      if (userId != null) {
+        try {
+          // Kullanıcının FCM token'ını al
+          final userDoc = await _firestore.collection('users').doc(userId).get();
+          final fcmToken = userDoc.data()?['fcmToken'];
+          
+          if (fcmToken != null && fcmToken.isNotEmpty) {
+            // Bildirim ayarlarını kontrol et
+            final settingsDoc = await _firestore.collection('notification_settings').doc(userId).get();
+            bool shouldSend = true;
+            
+            if (settingsDoc.exists) {
+              final settings = settingsDoc.data();
+              final pushEnabled = settings?['pushNotifications'] ?? true;
+              
+              if (!pushEnabled) {
+                print('⚠️ Kullanıcı push bildirimleri kapalı');
+                shouldSend = false;
+              } else {
+                // Bildirim tipine göre kontrol
+                final notificationType = type ?? 'system';
+                switch (notificationType) {
+                  case 'promotion':
+                    shouldSend = settings?['promotionalOffers'] ?? false;
+                    break;
+                  case 'order':
+                    shouldSend = settings?['orderUpdates'] ?? true;
+                    break;
+                  case 'product':
+                  case 'new_product':
+                    shouldSend = settings?['newProductAlerts'] ?? true;
+                    break;
+                  case 'price':
+                    shouldSend = settings?['priceAlerts'] ?? true;
+                    break;
+                  case 'security':
+                    shouldSend = settings?['securityAlerts'] ?? true;
+                    break;
+                  default:
+                    shouldSend = pushEnabled;
+                }
+              }
+            }
+            
+            if (shouldSend) {
+              // googleapis ile FCM v1 API kullanarak bildirim gönder
+              final success = await FCMServiceAccountService.sendNotification(
+                fcmToken: fcmToken,
+                title: title,
+                body: body,
+                type: type ?? 'system',
+                data: data,
+              );
+              
+              if (success) {
+                print('✅ FCM bildirimi googleapis ile gönderildi');
+              } else {
+                print('⚠️ FCM bildirimi gönderilemedi, notification_queue\'ya kaydediliyor');
+                // Yedek olarak notification_queue'ya kaydet
+                await _addToNotificationQueue(userId, title, body, type, data);
+              }
+            } else {
+              print('⚠️ Kullanıcı bildirim ayarları nedeniyle gönderilmedi');
+            }
+          } else {
+            print('⚠️ Kullanıcının FCM Token\'ı yok, notification_queue\'ya kaydediliyor');
+            await _addToNotificationQueue(userId, title, body, type, data);
+          }
+        } catch (e) {
+          print('⚠️ FCM bildirimi gönderilemedi: $e, notification_queue\'ya kaydediliyor');
+          await _addToNotificationQueue(userId, title, body, type, data);
+        }
+      } else {
+        // userId yoksa notification_queue'ya kaydet (tüm kullanıcılara gönderilecek)
+        await _addToNotificationQueue(null, title, body, type, data);
+      }
+
+      // Eğer userId belirtilmişse, kullanıcının bildirimler koleksiyonuna da ekle
+      if (userId != null) {
+        try {
+          await _firestore
+              .collection('users')
+              .doc(userId)
+              .collection('notifications')
+              .doc(notification.id)
+              .set(notificationData);
+          print('✅ Bildirim kullanıcının bildirimler listesine eklendi');
+        } catch (e) {
+          print('⚠️ Kullanıcı bildirimleri listesine eklenemedi: $e');
+          // Bu hata kritik değil, devam edebiliriz
+        }
+      } else {
+        print('⚠️ userId belirtilmedi, tüm kullanıcılara gönderilecek');
+      }
+      
     } catch (e) {
       print('❌ Bildirim gönderilemedi: $e');
+      rethrow;
     }
   }
 
@@ -298,15 +397,37 @@ class NotificationService {
     if (user == null) return Stream.value([]);
 
     // Sadece kullanıcıya özel bildirimleri al
+    // Eğer composite index yoksa, önce userId ile filtrele, sonra memory'de sırala
     return _firestore
         .collection('notifications')
         .where('userId', isEqualTo: user.uid)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => AppNotification.fromFirestore(doc))
-          .toList();
+      try {
+        final notifications = snapshot.docs
+            .map((doc) {
+              try {
+                return AppNotification.fromFirestore(doc);
+              } catch (e) {
+                print('⚠️ Bildirim parse edilemedi (${doc.id}): $e');
+                return null;
+              }
+            })
+            .whereType<AppNotification>()
+            .toList();
+        
+        // Memory'de sırala (eğer orderBy kullanılamazsa)
+        notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        
+        return notifications;
+      } catch (e) {
+        print('❌ Bildirimler parse edilirken hata: $e');
+        return <AppNotification>[];
+      }
+    }).handleError((error, stackTrace) {
+      print('❌ Bildirimler yüklenirken hata: $error');
+      print('Stack trace: $stackTrace');
+      // Hata durumunda Stream devam eder ama boş liste döndürülür
     });
   }
 
@@ -343,6 +464,32 @@ class NotificationService {
       print('✅ Tüm bildirimler okundu olarak işaretlendi');
     } catch (e) {
       print('❌ Bildirimler işaretlenemedi: $e');
+    }
+  }
+
+
+  /// notification_queue'ya kaydet (yedek yöntem)
+  Future<void> _addToNotificationQueue(
+    String? userId,
+    String title,
+    String body,
+    String? type,
+    Map<String, dynamic>? data,
+  ) async {
+    try {
+      final notificationQueueRef = _firestore.collection('notification_queue').doc();
+      await notificationQueueRef.set({
+        if (userId != null) 'userId': userId,
+        'title': title,
+        'body': body,
+        'type': type ?? 'system',
+        'data': data ?? {},
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
+      print('✅ Bildirim notification_queue\'ya eklendi (yedek)');
+    } catch (e) {
+      print('⚠️ notification_queue\'ya eklenemedi: $e');
     }
   }
 

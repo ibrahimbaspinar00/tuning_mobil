@@ -128,6 +128,7 @@ class _ParaYuklemeSayfasiState extends State<ParaYuklemeSayfasi>
     final isSmallScreen = screenWidth < 400;
     
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
@@ -754,6 +755,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       appBar: AppBar(
         title: const Text('İşlem Geçmişi'),
         backgroundColor: Colors.blue[600],

@@ -5,7 +5,7 @@ import '../widgets/no_overflow.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../widgets/error_handler.dart';
 import '../services/user_auth_service.dart';
-import 'kayit_sayfasi.dart';
+import '../config/app_routes.dart';
 
 class GirisSayfasi extends StatefulWidget {
   const GirisSayfasi({super.key});
@@ -204,6 +204,7 @@ class _GirisSayfasiState extends State<GirisSayfasi> with AutomaticKeepAliveClie
     }
     
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -582,12 +583,7 @@ class _GirisSayfasiState extends State<GirisSayfasi> with AutomaticKeepAliveClie
                         ),
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const KayitSayfasi(),
-                              ),
-                            );
+                            AppRoutes.navigateToRegister(context);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.transparent,

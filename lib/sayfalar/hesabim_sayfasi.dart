@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_data_service.dart';
 import '../services/order_service.dart';
 import '../widgets/professional_components.dart';
 import '../utils/professional_animations.dart';
+import '../providers/app_state_provider.dart';
 import '../utils/professional_error_handler.dart';
-import 'profil_bilgileri_sayfasi.dart';
 import 'siparisler_sayfasi.dart';
 import 'adres_yonetimi_sayfasi.dart';
 import 'odeme_yontemleri_sayfasi.dart';
 import 'bildirim_ayarlari_sayfasi.dart';
 import 'para_yukleme_sayfasi.dart';
 import 'giris_sayfasi.dart';
+import 'main_screen.dart';
+import 'profil_duzenleme_sayfasi.dart';
 
 class HesabimSayfasi extends StatefulWidget {
   const HesabimSayfasi({super.key});
@@ -23,21 +28,25 @@ class HesabimSayfasi extends StatefulWidget {
 class _HesabimSayfasiState extends State<HesabimSayfasi> {
   String _userName = 'Kullanıcı';
   String _userEmail = 'kullanici@example.com';
-  String? _profileImageUrl;
   double _walletBalance = 0.0;
   int _orderCount = 0;
   int _favoriteCount = 0;
-  bool _isLoading = true;
+  // Siparişler özet kartı kaldırıldığı için bu state'ler kullanılmıyor
   
   // Services
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseDataService _firebaseDataService = FirebaseDataService();
   final OrderService _orderService = OrderService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  StreamSubscription<QuerySnapshot>? _ordersSub;
+  StreamSubscription<QuerySnapshot>? _favoritesSub;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _attachRealtimeListeners();
   }
 
   Future<void> _loadUserData() async {
@@ -50,13 +59,13 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
           setState(() {
             _userName = 'Misafir Kullanıcı';
             _userEmail = 'Giriş yapmak için tıklayın';
-            _isLoading = false;
+            // Oturum yoksa, favori sayısını uygulama state'inden al (kalıcılık için fallback)
+            _favoriteCount = context.read<AppStateProvider>().favoriteProducts.length;
+            _orderCount = 0;
           });
         }
         return;
       }
-      
-      setState(() => _isLoading = true);
       
       // Firebase'den kullanıcı bilgilerini yükle
       final userProfile = await _firebaseDataService.getUserProfile();
@@ -66,20 +75,57 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
         setState(() {
           _userName = userProfile?['fullName'] ?? 'Kullanıcı';
           _userEmail = userProfile?['email'] ?? 'kullanici@example.com';
-          _profileImageUrl = userProfile?['profileImageUrl'];
           _walletBalance = userStats['walletBalance']?.toDouble() ?? 0.0;
           _orderCount = userStats['totalOrders'] ?? 0;
           _favoriteCount = userStats['favoriteCount'] ?? 0;
-          _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading user data: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
     }
   }
+
+  void _attachRealtimeListeners() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Realtime orders count
+    _ordersSub?.cancel();
+    _ordersSub = _firestore
+        .collection('orders')
+        .where('userId', isEqualTo: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      int totalOrders = snapshot.docs.length;
+      setState(() {
+        _orderCount = totalOrders;
+      });
+    });
+
+    // Realtime favorites count
+    _favoritesSub?.cancel();
+    _favoritesSub = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('favorites')
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      setState(() {
+        _favoriteCount = snapshot.docs.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _ordersSub?.cancel();
+    _favoritesSub?.cancel();
+    super.dispose();
+  }
+
+  
 
   Future<void> _signOut() async {
     try {
@@ -87,7 +133,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const GirisSayfasi()),
+          MaterialPageRoute(builder: (context) => const MainScreen()),
           (route) => false,
         );
       }
@@ -103,6 +149,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // Klavye performansı için
       backgroundColor: Colors.grey[50],
       appBar: ProfessionalComponents.createAppBar(
         title: 'Hesabım',
@@ -113,8 +160,13 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _loadUserData();
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Profil kartı
@@ -129,7 +181,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
             
             // İstatistikler
             _buildStatsCard(),
-            
+
             const SizedBox(height: 16),
             
             // Menü seçenekleri
@@ -140,6 +192,7 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
             // Çıkış butonu
             _buildLogoutButton(),
           ],
+          ),
         ),
       ),
     );
@@ -196,15 +249,20 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
                 ),
               ),
               IconButton(
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  final result = await Navigator.push(
                     context,
                     ProfessionalAnimations.createSlideRoute(
-                      const ProfilBilgileriSayfasi(),
+                      const ProfilDuzenlemeSayfasi(),
                     ),
                   );
+                  // Profil güncellendiyse verileri yeniden yükle
+                  if (result == true) {
+                    _loadUserData();
+                  }
                 },
                 icon: const Icon(Icons.edit),
+                tooltip: 'Profili Düzenle',
               ),
             ],
           ),
@@ -326,6 +384,8 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
     );
   }
 
+  
+
   Widget _buildStatItem(String label, String value, IconData icon, Color color) {
     return Column(
       children: [
@@ -363,11 +423,16 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
         subtitle: 'Geçmiş siparişlerinizi görüntüleyin',
         icon: Icons.shopping_bag,
         color: Colors.blue,
-        onTap: () {
+        onTap: () async {
+          // Her açılışta güncel siparişleri getir
+          final orders = await _orderService.getUserOrders();
+          if (!mounted) return;
           Navigator.push(
             context,
             ProfessionalAnimations.createSlideRoute(
-              const SiparislerSayfasi(),
+              SiparislerSayfasi(
+                orders: orders,
+              ),
             ),
           );
         },
@@ -581,13 +646,8 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
       message: 'Hesabınızdan çıkış yapmak istediğinizden emin misiniz?',
       actionText: 'Çıkış Yap',
       onAction: () {
-        // Çıkış işlemi
         Navigator.pop(context);
-        ProfessionalErrorHandler.showSuccess(
-          context: context,
-          title: 'Çıkış Yapıldı',
-          message: 'Başarıyla çıkış yaptınız.',
-        );
+        _signOut();
       },
     );
   }

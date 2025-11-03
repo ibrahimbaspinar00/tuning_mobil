@@ -10,5 +10,39 @@
         "firebase-debug.*.log"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/product/:productId",
+        "destination": "/product.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/product/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ]
+  },
+  "emulators": {
+    "functions": {
+      "port": 5002
+    }
+  }
 }
