@@ -7,9 +7,13 @@ import 'package:flutter/services.dart' show rootBundle;
 /// FCM v1 API kullanarak bildirim gönderme servisi
 /// ⚠️ UYARI: Service Account JSON'u client-side'da tutmak güvenlik riski taşır!
 /// Production'da backend'de kullanılmalı.
+/// 
+/// NOT: Bu servis opsiyoneldir. EnhancedNotificationService zaten mevcut ve yeterlidir.
+/// Bu servis sadece Service Account ile direkt FCM API kullanmak isteyenler için.
 class FCMServiceAccountService {
   // Service Account JSON içeriği (assets klasöründen okunur)
   // ⚠️ GÜVENLİK: Bu dosyayı .gitignore'a ekleyin ve public repo'ya koymayın!
+  // ⚠️ NOT: Production'da bu servis backend'de kullanılmalı, client-side'da değil!
   
   /// Service Account JSON'u yükle (assets'ten veya cache'ten)
   static Future<Map<String, dynamic>?> _loadServiceAccountJson() async {
@@ -111,8 +115,9 @@ class FCMServiceAccountService {
           ),
         );
 
-        // Firebase Project ID
-        const projectId = 'tuning-app-789ce';
+        // Firebase Project ID - Environment variable'dan alınmalı veya config'den
+        // ⚠️ NOT: Hardcoded project ID güvenlik riski taşır, config dosyasından alınmalı
+        const projectId = 'tuning-app-789ce'; // TODO: Config'den al
         final projectPath = 'projects/$projectId';
 
         // SendMessageRequest oluştur

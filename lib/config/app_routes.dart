@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../sayfalar/giris_sayfasi.dart';
 import '../sayfalar/kayit_sayfasi.dart';
 import '../sayfalar/main_screen.dart';
@@ -115,15 +116,19 @@ class AppRoutes {
           // URL parse ederek productId çıkar
           final uri = Uri.tryParse(settings.name ?? '');
           if (uri != null && uri.pathSegments.isNotEmpty) {
-            final productId = uri.pathSegments.last;
-            if (productId.isNotEmpty) {
-              return MaterialPageRoute(
-                builder: (_) => _ProductDetailFromIdPage(
-                  productId: productId,
-                  forceHasPurchased: false, // Deep link için false
-                ),
-                settings: settings,
-              );
+            try {
+              final productId = uri.pathSegments.last;
+              if (productId.isNotEmpty) {
+                return MaterialPageRoute(
+                  builder: (_) => _ProductDetailFromIdPage(
+                    productId: productId,
+                    forceHasPurchased: false, // Deep link için false
+                  ),
+                  settings: settings,
+                );
+              }
+            } catch (e) {
+              debugPrint('Error parsing productId from pathSegments: $e');
             }
           }
         }

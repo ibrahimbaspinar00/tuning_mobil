@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -7,7 +8,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import '../model/notification.dart';
+import '../config/app_routes.dart';
+import '../main.dart';
+import '../services/order_service.dart';
 
 /// Gelişmiş bildirim servisi - Kampanya, indirim, sipariş, kargo bildirimleri
 class EnhancedNotificationService {
@@ -23,6 +28,10 @@ class EnhancedNotificationService {
 
   String? _fcmToken;
   bool _isInitialized = false;
+  
+  // Stream subscriptions for memory leak prevention
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
 
   /// Servisi başlat
   Future<void> initialize() async {
@@ -37,8 +46,9 @@ class EnhancedNotificationService {
       // Message handlers
       // Background handler main.dart'ta kaydedilmiş olmalı (main() içinde)
       // onBackgroundMessage sadece main() içinde çağrılmalı
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+      // Memory leak önleme: Subscription'ları kaydet
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
       
       // Uygulama kapalıyken açılan bildirimleri kontrol et
       // Geç çağrılır (plugin'in tamamen hazır olması için)
@@ -308,7 +318,7 @@ class EnhancedNotificationService {
         message.notification!.title ?? 'Bildirim',
         message.notification!.body ?? '',
         details,
-        payload: message.data.toString(),
+        payload: json.encode(message.data),
       );
       
       debugPrint('✅ Background bildirim gösterildi: ${message.notification!.title}');
@@ -375,7 +385,7 @@ class EnhancedNotificationService {
         id: message.hashCode,
         title: notification.title ?? 'Bildirim',
         body: notification.body ?? '',
-        payload: message.data.toString(),
+        payload: json.encode(message.data),
         channelId: _getChannelId(message.data),
         type: message.data['type'] ?? 'system',
       );
@@ -459,7 +469,73 @@ class EnhancedNotificationService {
   /// Local notification tap handler
   void _onNotificationTap(NotificationResponse response) {
     print('👆 Local notification tıklandı: ${response.payload}');
-    // TODO: Navigation logic
+    
+    if (response.payload == null || response.payload!.isEmpty) {
+      // Payload yoksa bildirimler sayfasına git
+      _navigateToNotifications();
+      return;
+    }
+    
+    try {
+      // Payload'dan data parse et
+      final payload = response.payload!;
+      Map<String, dynamic>? data;
+      
+      // JSON decode dene
+      try {
+        data = json.decode(payload) as Map<String, dynamic>?;
+      } catch (e) {
+        // JSON decode başarısız oldu, eski format olabilir (toString() formatı)
+        debugPrint('JSON decode başarısız, eski format parse ediliyor: $e');
+        // Eski format için basit parse (fallback)
+        data = _parseLegacyPayload(payload);
+      }
+      
+      if (data != null && data.isNotEmpty) {
+        _handleNotificationAction(data);
+      } else {
+        // Payload parse edilemediyse bildirimler sayfasına git
+        _navigateToNotifications();
+      }
+    } catch (e) {
+      debugPrint('Notification tap hatası: $e');
+      _navigateToNotifications();
+    }
+  }
+  
+  /// Eski format payload'ı parse et (toString() formatı için fallback)
+  Map<String, dynamic>? _parseLegacyPayload(String payload) {
+    try {
+      // Eğer payload Map.toString() formatındaysa (örnek: {action: view_order, order_id: 123})
+      // Bu format güvenilir değil, ama fallback olarak deneyebiliriz
+      if (payload.startsWith('{') && payload.endsWith('}')) {
+        // Basit key-value parse
+        final cleaned = payload.replaceAll('{', '').replaceAll('}', '');
+        final pairs = cleaned.split(',');
+        final Map<String, dynamic> result = {};
+        
+        for (final pair in pairs) {
+          final parts = pair.split(':');
+          if (parts.length == 2) {
+            final key = parts[0].trim();
+            var value = parts[1].trim();
+            // String tırnaklarını temizle
+            if (value.startsWith("'") && value.endsWith("'")) {
+              value = value.substring(1, value.length - 1);
+            } else if (value.startsWith('"') && value.endsWith('"')) {
+              value = value.substring(1, value.length - 1);
+            }
+            result[key] = value;
+          }
+        }
+        
+        return result.isNotEmpty ? result : null;
+      }
+    } catch (e) {
+      debugPrint('Legacy payload parse hatası: $e');
+    }
+    
+    return null;
   }
 
   /// Channel ID belirle
@@ -555,11 +631,135 @@ class EnhancedNotificationService {
 
   /// Notification action handler
   Future<void> _handleNotificationAction(Map<String, dynamic> data) async {
-    final action = data['action'];
-    final type = data['type'];
+    final action = data['action']?.toString();
+    final type = data['type']?.toString();
     
     print('🎯 Notification action: $action, type: $type');
-    // TODO: Navigation logic based on action and type
+    
+    if (navigatorKey.currentContext == null) {
+      debugPrint('⚠️ Navigator context yok, navigasyon yapılamıyor');
+      return;
+    }
+    
+    final context = navigatorKey.currentContext!;
+    
+    try {
+      switch (action) {
+        case 'view_campaign':
+          // Kampanya sayfasına git (şimdilik ana sayfaya)
+          await Navigator.pushNamed(context, AppRoutes.main);
+          break;
+          
+        case 'view_flash_sale':
+          // Flash sale sayfasına git (şimdilik ana sayfaya)
+          await Navigator.pushNamed(context, AppRoutes.main);
+          break;
+          
+        case 'view_product':
+          // Ürün detay sayfasına git
+          final productId = data['product_id']?.toString() ?? 
+                           data['productId']?.toString();
+          if (productId != null && productId.isNotEmpty) {
+            await AppRoutes.navigateToProductDetailById(context, productId);
+          } else {
+            // Product ID yoksa ana sayfaya git
+            await Navigator.pushNamed(context, AppRoutes.main);
+          }
+          break;
+          
+        case 'view_order':
+          // Sipariş detay sayfasına git
+          final orderId = data['order_id']?.toString() ?? 
+                         data['orderId']?.toString();
+          if (orderId != null && orderId.isNotEmpty) {
+            await _navigateToOrderDetail(context, orderId);
+          } else {
+            // Order ID yoksa siparişler sayfasına git
+            await Navigator.pushNamed(context, AppRoutes.orders);
+          }
+          break;
+          
+        case 'track_shipment':
+          // Kargo takip - sipariş detay sayfasına git
+          final orderId = data['order_id']?.toString() ?? 
+                         data['orderId']?.toString();
+          if (orderId != null && orderId.isNotEmpty) {
+            await _navigateToOrderDetail(context, orderId);
+          } else {
+            await Navigator.pushNamed(context, AppRoutes.orders);
+          }
+          break;
+          
+        case 'rate_order':
+          // Sipariş değerlendirme - sipariş detay sayfasına git
+          final orderId = data['order_id']?.toString() ?? 
+                         data['orderId']?.toString();
+          if (orderId != null && orderId.isNotEmpty) {
+            await _navigateToOrderDetail(context, orderId);
+          } else {
+            await Navigator.pushNamed(context, AppRoutes.orders);
+          }
+          break;
+          
+        case 'view_refund':
+          // İade detay - sipariş detay sayfasına git
+          final orderId = data['order_id']?.toString() ?? 
+                         data['orderId']?.toString();
+          if (orderId != null && orderId.isNotEmpty) {
+            await _navigateToOrderDetail(context, orderId);
+          } else {
+            await Navigator.pushNamed(context, AppRoutes.orders);
+          }
+          break;
+          
+        default:
+          // Bilinmeyen action - bildirimler sayfasına git
+          _navigateToNotifications();
+          break;
+      }
+    } catch (e) {
+      debugPrint('❌ Navigation hatası: $e');
+      // Hata durumunda bildirimler sayfasına git
+      _navigateToNotifications();
+    }
+  }
+  
+  /// Sipariş detay sayfasına git
+  Future<void> _navigateToOrderDetail(BuildContext context, String orderId) async {
+    try {
+      final orderService = OrderService();
+      final orderModel = await orderService.getOrderById(orderId);
+      
+      if (orderModel != null) {
+        // OrderModel.Order'ı Order'a çevir
+        final order = _convertOrderModelToOrder(orderModel);
+        await AppRoutes.navigateToOrderDetail(context, order);
+      } else {
+        debugPrint('⚠️ Sipariş bulunamadı: $orderId');
+        // Sipariş bulunamadıysa siparişler sayfasına git
+        await Navigator.pushNamed(context, AppRoutes.orders);
+      }
+    } catch (e) {
+      debugPrint('❌ Sipariş detay yükleme hatası: $e');
+      await Navigator.pushNamed(context, AppRoutes.orders);
+    }
+  }
+  
+  /// OrderModel.Order'ı Order'a çevir
+  dynamic _convertOrderModelToOrder(dynamic orderModel) {
+    // OrderModel.Order aslında Order sınıfı (aynı model)
+    // Direkt kullanabiliriz
+    return orderModel;
+  }
+  
+  /// Bildirimler sayfasına git
+  void _navigateToNotifications() {
+    if (navigatorKey.currentContext == null) {
+      debugPrint('⚠️ Navigator context yok');
+      return;
+    }
+    
+    Navigator.pushNamed(navigatorKey.currentContext!, AppRoutes.notifications);
   }
 
   // ==================== KAMPANYA VE İNDİRİM BİLDİRİMLERİ ====================
@@ -866,7 +1066,7 @@ class EnhancedNotificationService {
         id: notification.hashCode,
         title: title,
         body: body,
-        payload: data.toString(),
+        payload: data != null ? json.encode(data) : null,
         channelId: channelId,
         type: type,
       );
@@ -934,6 +1134,17 @@ class EnhancedNotificationService {
 
   /// Servis başlatıldı mı?
   bool get isInitialized => _isInitialized;
+  
+  /// Servisi temizle (memory leak önleme)
+  /// NOT: Singleton olduğu için genellikle çağrılmaz, ama test veya reset için kullanılabilir
+  void dispose() {
+    _foregroundMessageSubscription?.cancel();
+    _foregroundMessageSubscription = null;
+    _messageOpenedSubscription?.cancel();
+    _messageOpenedSubscription = null;
+    _isInitialized = false;
+    debugPrint('✅ EnhancedNotificationService temizlendi');
+  }
 }
 
 // Background handler artık main.dart'ta tanımlı

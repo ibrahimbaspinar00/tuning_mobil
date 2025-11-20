@@ -1,8 +1,11 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../model/product.dart';
 import '../model/product_review.dart';
+import 'storage_service.dart';
 
 /// Ürün yönetimi için ana servis
 class ProductService {
@@ -27,7 +30,21 @@ class ProductService {
           try {
             final data = doc.data();
             data['id'] = doc.id;
-            return Product.fromMap(data);
+            
+            // Debug: Ürün verilerini logla
+            debugPrint('=== ÜRÜN VERİSİ ===');
+            debugPrint('Ürün ID: ${doc.id}');
+            debugPrint('Ürün Adı: ${data['name']}');
+            debugPrint('imageUrl: ${data['imageUrl']}');
+            debugPrint('image_url: ${data['image_url']}');
+            debugPrint('image: ${data['image']}');
+            debugPrint('Tüm veri: $data');
+            
+            final product = Product.fromMap(data);
+            debugPrint('Parse edilen imageUrl: ${product.imageUrl}');
+            debugPrint('==================');
+            
+            return product;
           } catch (e) {
             debugPrint('Error parsing product ${doc.id}: $e');
             return null;
@@ -207,6 +224,68 @@ class ProductService {
     } catch (e) {
       debugPrint('Error getting discounted products: $e');
       return _getDummyProducts().where((p) => p.discountPercentage > 0).toList();
+    }
+  }
+
+  /// Ürün ekle (Resim ile)
+  Future<String?> uploadProduct({
+    required String name,
+    required double price,
+    Uint8List? imageBytes,
+    String? fileName,
+    File? imageFile,
+    String? description,
+    String? category,
+    int? stock,
+    double? discountPercentage,
+  }) async {
+    try {
+      String imageUrl = '';
+
+      // Resim yükleme (öncelik: imageBytes, sonra imageFile)
+      if (imageBytes != null && fileName != null) {
+        try {
+          final storageService = StorageService();
+          imageUrl = await storageService.uploadProductImage(imageBytes, fileName);
+          debugPrint('✓ Ürün resmi yüklendi: $imageUrl');
+        } catch (e) {
+          debugPrint('✗ Ürün resmi yüklenemedi: $e');
+          // Resim yüklenemese bile ürün eklenmeye devam edilir
+        }
+      } else if (imageFile != null) {
+        try {
+          final storageService = StorageService();
+          imageUrl = await storageService.uploadProductImageFile(imageFile);
+          debugPrint('✓ Ürün resmi yüklendi: $imageUrl');
+        } catch (e) {
+          debugPrint('✗ Ürün resmi yüklenemedi: $e');
+          // Resim yüklenemese bile ürün eklenmeye devam edilir
+        }
+      }
+
+      // Ürünü Firestore'a ekle
+      final docRef = await _firestore.collection('products').add({
+        'name': name,
+        'price': price,
+        'imageUrl': imageUrl,
+        'description': description ?? '',
+        'category': category ?? 'Genel',
+        'stock': stock ?? 0,
+        'discountPercentage': discountPercentage ?? 0.0,
+        'isActive': true,
+        'averageRating': 0.0,
+        'reviewCount': 0,
+        'salesCount': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✓ Ürün başarıyla eklendi: ${docRef.id}');
+      return docRef.id;
+    } catch (e, stackTrace) {
+      debugPrint('✗ Ürün ekleme hatası: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 

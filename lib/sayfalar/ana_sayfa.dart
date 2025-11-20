@@ -91,12 +91,14 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
   @override
   void dispose() {
     _searchController.dispose();
-    // FocusNode kaldırıldı - klavye sorunu için
+    // Timer'ları iptal et ve null yap
     _searchDebounceTimer?.cancel();
-    // Otomatik scroll kapatıldı
+    _searchDebounceTimer = null;
     _updateTimer?.cancel();
-    // Stream subscription'ı iptal et
+    _updateTimer = null;
+    // Stream subscription'ı iptal et ve null yap
     _productsSubscription?.cancel();
+    _productsSubscription = null;
     super.dispose();
   }
 
@@ -159,13 +161,18 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
     // Önceki timer'ı iptal et
     _searchDebounceTimer?.cancel();
     
-    // Yeni timer başlat (500ms debounce - daha uzun)
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+    // Yeni timer başlat (300ms debounce - klavye performansı için optimize edildi)
+    // Daha kısa debounce = daha hızlı arama, ama daha fazla işlem
+    // 300ms optimal denge noktası
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      setState(() {
-        _searchQuery = query;
-        _filterProducts();
-      });
+      // Sadece query değiştiyse state güncelle (gereksiz rebuild önleme)
+      if (_searchQuery != query) {
+        setState(() {
+          _searchQuery = query;
+          _filterProducts();
+        });
+      }
     });
   }
 
@@ -297,46 +304,52 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(), // Daha smooth scroll
-          padding: const EdgeInsets.only(bottom: 16), // Sabit padding - klavye performansı için
-          child: Column(
-            children: [
-              // Arama ve Filtreler
-              _buildSearchAndFilters(),
-              
-              // Popüler Ürünler
-              if (!_isLoading) ...[
-                _buildSpecialProductsSection(),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            _loadProducts();
+            await _loadSpecialProducts();
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 16), // Sabit padding - klavye performansı için
+            child: Column(
+              children: [
+                // Arama ve Filtreler
+                _buildSearchAndFilters(),
+                
+                // Popüler Ürünler
+                if (!_isLoading) ...[
+                  _buildSpecialProductsSection(),
+                ],
+                
+                // Ürün Listesi
+                if (_isLoading)
+                  ProfessionalComponents.createLoadingIndicator(
+                    message: 'Ürünler yükleniyor...',
+                  )
+                else if (_filteredProducts.isEmpty)
+                  ProfessionalComponents.createEmptyState(
+                    title: 'Ürün Bulunamadı',
+                    message: 'Arama kriterlerinize uygun ürün bulunamadı.',
+                    icon: Icons.search_off,
+                    buttonText: 'Filtreleri Temizle',
+                    onButtonPressed: () {
+                      if (!mounted) return;
+                      setState(() {
+                        _searchQuery = '';
+                        _selectedCategory = 'Tümü';
+                        _searchController.clear();
+                        _filterProducts();
+                      });
+                    },
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _buildProductGrid(),
+                  ),
               ],
-              
-              // Ürün Listesi
-              if (_isLoading)
-                ProfessionalComponents.createLoadingIndicator(
-                  message: 'Ürünler yükleniyor...',
-                )
-              else if (_filteredProducts.isEmpty)
-                ProfessionalComponents.createEmptyState(
-                  title: 'Ürün Bulunamadı',
-                  message: 'Arama kriterlerinize uygun ürün bulunamadı.',
-                  icon: Icons.search_off,
-                  buttonText: 'Filtreleri Temizle',
-                  onButtonPressed: () {
-                    if (!mounted) return;
-                    setState(() {
-                      _searchQuery = '';
-                      _selectedCategory = 'Tümü';
-                      _searchController.clear();
-                      _filterProducts();
-                    });
-                  },
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: _buildProductGrid(),
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -349,9 +362,10 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
       color: Colors.white,
       child: Column(
         children: [
-          // Arama çubuğu - Maximum klavye performansı (RepaintBoundary ile)
+          // Arama çubuğu - Maximum klavye performansı (RepaintBoundary + const ile)
           RepaintBoundary(
             child: TextField(
+              key: const ValueKey('search_field'), // Sabit key - rebuild önleme
               controller: _searchController,
               onChanged: _performSearch,
               onTap: () {
@@ -369,6 +383,9 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
               enableInteractiveSelection: true,
               textCapitalization: TextCapitalization.none,
               maxLines: 1,
+              // Klavye performansı için optimizasyonlar
+              buildCounter: null, // Counter widget'ı kaldır
+              maxLength: null, // Max length kaldır (performans için)
               style: const TextStyle(), // Sabit style - rebuild önleme
               decoration: const InputDecoration(
                 hintText: 'Ürün ara...',
@@ -380,6 +397,8 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
                 fillColor: Colors.white,
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 isDense: true, // Daha compact - performans için
+                // Klavye performansı için ek optimizasyonlar
+                isCollapsed: false, // Collapsed mode kapalı (performans için)
               ),
             ),
           ),
@@ -474,7 +493,11 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
       itemCount: _filteredProducts.length,
       itemBuilder: (context, index) {
         final product = _filteredProducts[index];
-        return _buildProductCard(product);
+        // Rebuild optimizasyonu: RepaintBoundary ile her item'ı izole et
+        return RepaintBoundary(
+          key: ValueKey('product_${product.id}'), // Sabit key - rebuild önleme
+          child: _buildProductCard(product),
+        );
       },
     );
   }
@@ -485,7 +508,9 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 400;
 
-    return Card(
+    // Rebuild optimizasyonu: Card'ı RepaintBoundary ile sarmala
+    return RepaintBoundary(
+      child: Card(
       margin: EdgeInsets.zero,
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -672,6 +697,7 @@ class _AnaSayfaState extends State<AnaSayfa> with TickerProviderStateMixin {
             ],
           ),
         ),
+      ),
       ),
     );
   }

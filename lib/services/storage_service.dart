@@ -224,5 +224,247 @@ class StorageService {
       debugPrint('Error deleting images: $e');
     }
   }
+
+  /// Ürün resmini Firebase Storage'a yükle (Byte data ile)
+  Future<String> uploadProductImage(Uint8List imageBytes, String fileName) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('Kullanıcı giriş yapmamış');
+      }
+
+      // Dosya boyutunu kontrol et (max 10MB)
+      final fileSize = imageBytes.length;
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (fileSize > maxSize) {
+        throw Exception('Resim çok büyük (Maksimum 10MB). Boyut: ${(fileSize / 1024 / 1024).toStringAsFixed(2)}MB');
+      }
+
+      // Dosya uzantısını kontrol et
+      final fileNameLower = fileName.toLowerCase();
+      String contentType = 'image/jpeg'; // Varsayılan
+      String fileExtension = '.jpg';
+      
+      // Dosya uzantısını belirle
+      if (fileNameLower.endsWith('.png')) {
+        contentType = 'image/png';
+        fileExtension = '.png';
+      } else if (fileNameLower.endsWith('.jpg') || fileNameLower.endsWith('.jpeg')) {
+        contentType = 'image/jpeg';
+        fileExtension = '.jpg';
+      } else if (fileNameLower.endsWith('.webp')) {
+        contentType = 'image/webp';
+        fileExtension = '.webp';
+      } else if (fileNameLower.endsWith('.gif')) {
+        contentType = 'image/gif';
+        fileExtension = '.gif';
+      }
+
+      debugPrint('=== ÜRÜN RESMİ YÜKLEME BAŞLIYOR ===');
+      debugPrint('Dosya adı: $fileName');
+      debugPrint('Boyut: ${(fileSize / 1024 / 1024).toStringAsFixed(2)}MB');
+      debugPrint('Content Type: $contentType');
+
+      // Dosya adını temizle ve benzersiz yap
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final cleanFileName = fileName.replaceAll(RegExp(r'[^\w\-.]'), '_');
+      final finalFileName = cleanFileName.endsWith(fileExtension) 
+          ? '${timestamp}_$cleanFileName'
+          : '${timestamp}_$cleanFileName$fileExtension';
+      
+      final path = 'product_images/$finalFileName';
+      
+      // Path'teki özel karakterleri temizle
+      final cleanPath = path.replaceAll(RegExp(r'[^\w\-/.]'), '_');
+
+      debugPrint('Orijinal Path: $path');
+      debugPrint('Temizlenmiş Path: $cleanPath');
+
+      // Firebase Storage referansı oluştur
+      final ref = _storage.ref().child(cleanPath);
+      
+      debugPrint('Firebase Storage referansı oluşturuldu: $cleanPath');
+
+      // Upload task'ı başlat (putData kullan)
+      final uploadTask = ref.putData(
+        imageBytes,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: {
+            'uploadedBy': user.uid,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'originalFileName': fileName,
+          },
+        ),
+      );
+
+      // Upload progress'i bekle (timeout ile)
+      debugPrint('Upload task başlatıldı, bekleniyor...');
+      try {
+        // Timeout: 60 saniye
+        await uploadTask.timeout(
+          const Duration(seconds: 60),
+          onTimeout: () {
+            debugPrint('✗ Upload timeout (60 saniye)');
+            throw Exception('Resim yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.');
+          },
+        );
+        debugPrint('✓ Upload task tamamlandı');
+      } catch (e) {
+        debugPrint('✗ Upload task hatası: $e');
+        rethrow;
+      }
+
+      // Download URL'yi al (timeout ile)
+      debugPrint('Download URL alınıyor...');
+      try {
+        final downloadUrl = await ref.getDownloadURL().timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            debugPrint('✗ Download URL timeout (30 saniye)');
+            throw Exception('Resim URL alınamadı. Lütfen tekrar deneyin.');
+          },
+        );
+        debugPrint('✓ Download URL alındı: $downloadUrl');
+        
+        // URL'nin geçerli olduğunu kontrol et
+        if (downloadUrl.isEmpty) {
+          throw Exception('Geçersiz resim URL\'si alındı');
+        }
+        
+        return downloadUrl;
+      } catch (e) {
+        debugPrint('✗ Download URL alma hatası: $e');
+        rethrow;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('✗ Ürün resmi yükleme hatası: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Ürün resmini Firebase Storage'a yükle (File ile)
+  Future<String> uploadProductImageFile(File imageFile) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('Kullanıcı giriş yapmamış');
+      }
+
+      // Dosya varlığını kontrol et
+      if (!await imageFile.exists()) {
+        throw Exception('Resim dosyası bulunamadı');
+      }
+
+      // Dosya boyutunu kontrol et (max 10MB)
+      final fileSize = await imageFile.length();
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (fileSize > maxSize) {
+        throw Exception('Resim çok büyük (Maksimum 10MB). Boyut: ${(fileSize / 1024 / 1024).toStringAsFixed(2)}MB');
+      }
+
+      // Dosya uzantısını kontrol et
+      final fileName = imageFile.path.split('/').last.toLowerCase();
+      String contentType = 'image/jpeg'; // Varsayılan
+      String fileExtension = '.jpg';
+      
+      // Dosya uzantısını belirle
+      if (fileName.endsWith('.png')) {
+        contentType = 'image/png';
+        fileExtension = '.png';
+      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+        contentType = 'image/jpeg';
+        fileExtension = '.jpg';
+      } else if (fileName.endsWith('.webp')) {
+        contentType = 'image/webp';
+        fileExtension = '.webp';
+      } else if (fileName.endsWith('.gif')) {
+        contentType = 'image/gif';
+        fileExtension = '.gif';
+      }
+
+      debugPrint('=== ÜRÜN RESMİ YÜKLEME BAŞLIYOR ===');
+      debugPrint('Dosya: ${imageFile.path}');
+      debugPrint('Boyut: ${(fileSize / 1024 / 1024).toStringAsFixed(2)}MB');
+      debugPrint('Content Type: $contentType');
+
+      // Dosya adını temizle ve benzersiz yap
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final cleanFileName = fileName.replaceAll(RegExp(r'[^\w\-.]'), '_');
+      final finalFileName = cleanFileName.endsWith(fileExtension) 
+          ? '${timestamp}_$cleanFileName'
+          : '${timestamp}_$cleanFileName$fileExtension';
+      
+      final path = 'product_images/$finalFileName';
+      
+      // Path'teki özel karakterleri temizle
+      final cleanPath = path.replaceAll(RegExp(r'[^\w\-/.]'), '_');
+
+      debugPrint('Temizlenmiş Path: $cleanPath');
+
+      // Firebase Storage referansı oluştur
+      final ref = _storage.ref().child(cleanPath);
+      
+      debugPrint('Firebase Storage referansı oluşturuldu: $cleanPath');
+
+      // Upload task'ı başlat
+      final uploadTask = ref.putFile(
+        imageFile,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: {
+            'uploadedBy': user.uid,
+            'uploadedAt': DateTime.now().toIso8601String(),
+            'originalFileName': fileName,
+          },
+        ),
+      );
+
+      // Upload progress'i bekle (timeout ile)
+      debugPrint('Upload task başlatıldı, bekleniyor...');
+      try {
+        // Timeout: 60 saniye
+        await uploadTask.timeout(
+          const Duration(seconds: 60),
+          onTimeout: () {
+            debugPrint('✗ Upload timeout (60 saniye)');
+            throw Exception('Resim yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.');
+          },
+        );
+        debugPrint('✓ Upload task tamamlandı');
+      } catch (e) {
+        debugPrint('✗ Upload task hatası: $e');
+        rethrow;
+      }
+
+      // Download URL'yi al (timeout ile)
+      debugPrint('Download URL alınıyor...');
+      try {
+        final downloadUrl = await ref.getDownloadURL().timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            debugPrint('✗ Download URL timeout (30 saniye)');
+            throw Exception('Resim URL alınamadı. Lütfen tekrar deneyin.');
+          },
+        );
+        debugPrint('✓ Download URL alındı: $downloadUrl');
+        
+        // URL'nin geçerli olduğunu kontrol et
+        if (downloadUrl.isEmpty) {
+          throw Exception('Geçersiz resim URL\'si alındı');
+        }
+        
+        return downloadUrl;
+      } catch (e) {
+        debugPrint('✗ Download URL alma hatası: $e');
+        rethrow;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('✗ Ürün resmi yükleme hatası: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
 }
 

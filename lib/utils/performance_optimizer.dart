@@ -6,6 +6,7 @@ import 'dart:async';
 /// Comprehensive performance optimization utilities
 class PerformanceOptimizer {
   static bool _isOptimized = false;
+  static Timer? _memoryCleanupTimer; // Memory leak önleme
 
   /// Initialize all performance optimizations
   static void initialize() {
@@ -24,10 +25,12 @@ class PerformanceOptimizer {
   }
 
   /// Optimize image cache settings
+  /// NOT: main.dart'ta da limitler var, burada tekrar set etmiyoruz
+  /// main.dart'taki limitler: maximumSize = 50, maximumSizeBytes = 25MB
   static void _optimizeImageCache() {
-    final imageCache = PaintingBinding.instance.imageCache;
-    imageCache.maximumSize = 100; // Limit to 100 images
-    imageCache.maximumSizeBytes = 50 << 20; // 50MB limit
+    // Image cache limitleri main.dart'ta zaten ayarlanmış
+    // Burada sadece periyodik temizlik yapıyoruz
+    // Limitler main.dart'ta: maximumSize = 50, maximumSizeBytes = 25MB
   }
 
   /// Optimize text rendering
@@ -48,9 +51,21 @@ class PerformanceOptimizer {
   /// Optimize memory usage
   static void _optimizeMemory() {
     // Clear image cache periodically
-    Timer.periodic(const Duration(minutes: 5), (_) {
+    // Memory leak önleme: Timer'ı kaydet
+    _memoryCleanupTimer?.cancel(); // Önceki timer'ı iptal et
+    _memoryCleanupTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _clearImageCache();
     });
+  }
+  
+  /// Dispose ve temizlik (memory leak önleme)
+  static void dispose() {
+    _memoryCleanupTimer?.cancel();
+    _memoryCleanupTimer = null;
+    _isOptimized = false;
+    if (kDebugMode) {
+      debugPrint('PerformanceOptimizer: Disposed');
+    }
   }
 
   /// Clear image cache

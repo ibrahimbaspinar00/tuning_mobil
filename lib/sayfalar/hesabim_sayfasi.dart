@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../services/firebase_data_service.dart';
 import '../services/order_service.dart';
+import '../services/wallet_service.dart';
 import '../widgets/professional_components.dart';
 import '../utils/professional_animations.dart';
 import '../providers/app_state_provider.dart';
@@ -25,28 +28,53 @@ class HesabimSayfasi extends StatefulWidget {
   State<HesabimSayfasi> createState() => _HesabimSayfasiState();
 }
 
-class _HesabimSayfasiState extends State<HesabimSayfasi> {
+class _HesabimSayfasiState extends State<HesabimSayfasi> with WidgetsBindingObserver {
   String _userName = 'Kullanıcı';
   String _userEmail = 'kullanici@example.com';
   double _walletBalance = 0.0;
   int _orderCount = 0;
   int _favoriteCount = 0;
-  // Siparişler özet kartı kaldırıldığı için bu state'ler kullanılmıyor
   
   // Services
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseDataService _firebaseDataService = FirebaseDataService();
   final OrderService _orderService = OrderService();
+  final WalletService _walletService = WalletService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   StreamSubscription<QuerySnapshot>? _ordersSub;
   StreamSubscription<QuerySnapshot>? _favoritesSub;
+  StreamSubscription<DocumentSnapshot>? _walletSub;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeWallet();
     _loadUserData();
     _attachRealtimeListeners();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Uygulama tekrar görünür olduğunda bakiyeyi güncelle
+      _refreshWalletBalance();
+    }
+  }
+  
+  Future<void> _initializeWallet() async {
+    try {
+      await _walletService.initialize();
+      if (mounted) {
+        setState(() {
+          _walletBalance = _walletService.currentBalance;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing wallet: $e');
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -67,18 +95,24 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
         return;
       }
       
-      // Firebase'den kullanıcı bilgilerini yükle
-      final userProfile = await _firebaseDataService.getUserProfile();
-      final userStats = await _firebaseDataService.getUserStats();
-      
-      if (mounted) {
-        setState(() {
-          _userName = userProfile?['fullName'] ?? 'Kullanıcı';
-          _userEmail = userProfile?['email'] ?? 'kullanici@example.com';
-          _walletBalance = userStats['walletBalance']?.toDouble() ?? 0.0;
-          _orderCount = userStats['totalOrders'] ?? 0;
-          _favoriteCount = userStats['favoriteCount'] ?? 0;
-        });
+      // Firebase'den kullanıcı bilgilerini yükle (timeout ile)
+      try {
+        final userProfile = await _firebaseDataService.getUserProfile()
+            .timeout(const Duration(seconds: 3));
+        final userStats = await _firebaseDataService.getUserStats()
+            .timeout(const Duration(seconds: 3));
+        
+        if (mounted) {
+          setState(() {
+            _userName = userProfile?['fullName'] ?? 'Kullanıcı';
+            _userEmail = userProfile?['email'] ?? 'kullanici@example.com';
+            _orderCount = userStats['totalOrders'] ?? 0;
+            _favoriteCount = userStats['favoriteCount'] ?? 0;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading user data from Firebase: $e');
+        // Hata durumunda mevcut değerleri koru
       }
     } catch (e) {
       debugPrint('Error loading user data: $e');
@@ -89,19 +123,32 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
     final user = _auth.currentUser;
     if (user == null) return;
 
+    // Firebase'in initialize edilip edilmediğini kontrol et
+    try {
+      Firebase.app();
+    } catch (e) {
+      debugPrint('Firebase not initialized, skipping real-time listeners: $e');
+      return;
+    }
+
     // Realtime orders count
     _ordersSub?.cancel();
     _ordersSub = _firestore
         .collection('orders')
         .where('userId', isEqualTo: user.uid)
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      int totalOrders = snapshot.docs.length;
-      setState(() {
-        _orderCount = totalOrders;
-      });
-    });
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        int totalOrders = snapshot.docs.length;
+        setState(() {
+          _orderCount = totalOrders;
+        });
+      },
+      onError: (error) {
+        debugPrint('Error in orders real-time listener: $error');
+      },
+    );
 
     // Realtime favorites count
     _favoritesSub?.cancel();
@@ -110,19 +157,100 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
         .doc(user.uid)
         .collection('favorites')
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      setState(() {
-        _favoriteCount = snapshot.docs.length;
-      });
-    });
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        setState(() {
+          _favoriteCount = snapshot.docs.length;
+        });
+      },
+      onError: (error) {
+        debugPrint('Error in favorites real-time listener: $error');
+      },
+    );
+
+    // Realtime wallet balance
+    _walletSub?.cancel();
+    _walletSub = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('wallet')
+        .doc('balance')
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        if (snapshot.exists && snapshot.data() != null) {
+          final balance = (snapshot.data()!['balance'] as num?)?.toDouble() ?? 0.0;
+          setState(() {
+            _walletBalance = balance;
+          });
+          // WalletService'in static değişkenini güncelle (initialize çağrısı yapmadan)
+          // initialize() çağrısı Firestore'dan tekrar okuma yapar ve quota hatasına neden olabilir
+        }
+      },
+      onError: (error) {
+        debugPrint('Error in wallet real-time listener: $error');
+        // Quota hatası veya diğer hatalar durumunda listener'ı durdur
+        if (error.toString().contains('RESOURCE_EXHAUSTED') || 
+            error.toString().contains('Quota exceeded')) {
+          debugPrint('Firestore quota exceeded, stopping wallet listener');
+          _walletSub?.cancel();
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Stream subscription'ları iptal et ve null yap
     _ordersSub?.cancel();
+    _ordersSub = null;
     _favoritesSub?.cancel();
+    _favoritesSub = null;
+    _walletSub?.cancel();
+    _walletSub = null;
     super.dispose();
+  }
+  
+  // Cüzdan bakiyesini manuel olarak güncelle
+  Future<void> _refreshWalletBalance() async {
+    final user = _auth.currentUser;
+    if (user == null || !mounted) return;
+    
+    try {
+      // Önce WalletService'ten al (en hızlı ve güvenilir)
+      await _walletService.initialize();
+      if (mounted) {
+        setState(() {
+          _walletBalance = _walletService.currentBalance;
+        });
+      }
+      
+      // Firebase initialize edilmişse Firestore'dan da doğrula
+      try {
+        Firebase.app();
+        final walletDoc = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('wallet')
+            .doc('balance')
+            .get();
+        
+        if (walletDoc.exists && walletDoc.data() != null && mounted) {
+          final balance = (walletDoc.data()!['balance'] as num?)?.toDouble() ?? _walletBalance;
+          setState(() {
+            _walletBalance = balance;
+          });
+        }
+      } catch (e) {
+        // Firebase hatası - WalletService'ten alınan değer zaten set edildi
+        debugPrint('Firebase error in refreshWalletBalance: $e');
+      }
+    } catch (e) {
+      debugPrint('Error refreshing wallet balance: $e');
+    }
   }
 
   
@@ -162,7 +290,25 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await _loadUserData();
+          // Cüzdan bakiyesini yenile (timeout ile)
+          try {
+            await _refreshWalletBalance().timeout(
+              const Duration(seconds: 3),
+            );
+          } catch (e) {
+            debugPrint('Wallet refresh error: $e');
+          }
+          
+          // Kullanıcı verilerini yükle (timeout ile)
+          try {
+            await _loadUserData().timeout(
+              const Duration(seconds: 3),
+            );
+          } catch (e) {
+            debugPrint('User data load error: $e');
+          }
+          
+          // Refresh her zaman tamamlanır (hata olsa bile)
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -289,48 +435,39 @@ class _HesabimSayfasiState extends State<HesabimSayfasi> {
                 ),
               ),
               const Spacer(),
-              Text(
-                '${_walletBalance.toStringAsFixed(2)} ₺',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Text(
+                  '${_walletBalance.toStringAsFixed(2)} ₺',
+                  key: ValueKey(_walletBalance),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ProfessionalComponents.createButton(
-                  text: 'Para Yükle',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      ProfessionalAnimations.createScaleRoute(
-                        const ParaYuklemeSayfasi(),
-                      ),
-                    );
-                  },
-                  type: ButtonType.primary,
-                  size: ButtonSize.small,
-                  icon: Icons.add,
+          ProfessionalComponents.createButton(
+            text: 'Para Yükle',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                ProfessionalAnimations.createScaleRoute(
+                  const ParaYuklemeSayfasi(),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ProfessionalComponents.createButton(
-                  text: 'Geçmiş',
-                  onPressed: () {
-                    // Cüzdan geçmişi
-                  },
-                  type: ButtonType.outline,
-                  size: ButtonSize.small,
-                  icon: Icons.history,
-                ),
-              ),
-            ],
+              );
+              // Para yüklendikten sonra bakiyeyi anında güncelle
+              if (result == true && mounted) {
+                await _refreshWalletBalance();
+              }
+            },
+            type: ButtonType.primary,
+            size: ButtonSize.small,
+            icon: Icons.add,
+            isFullWidth: true,
           ),
         ],
       ),

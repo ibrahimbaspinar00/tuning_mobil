@@ -689,21 +689,6 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
                               );
                             },
                           ),
-                          // Tema seçimi devre dışı
-                          // _buildSettingTile(
-                          //   icon: Icons.dark_mode,
-                          //   title: 'Tema',
-                          //   subtitle: _getThemeSubtitle(themeProvider),
-                          //   themeProvider: themeProvider,
-                          //   onTap: () => _showThemeDialog(themeProvider),
-                          // ),
-        _buildSettingTile(
-          icon: Icons.language,
-          title: 'Dil',
-          subtitle: 'Türkçe',
-          themeProvider: themeProvider,
-          onTap: () => _showLanguageDialog(),
-        ),
                           _buildSettingTile(
                             icon: Icons.lock,
                             title: 'Gizlilik Ayarları',
@@ -849,64 +834,6 @@ class _ProfilSayfasiState extends State<ProfilSayfasi> {
     );
   }
 
-  // Tema metodları devre dışı
-  // String _getThemeSubtitle(ThemeProvider themeProvider) {
-  //   if (themeProvider.isLightMode) {
-  //     return 'Açık Tema';
-  //   } else if (themeProvider.isDarkMode) {
-  //     return 'Koyu Tema';
-  //   } else {
-  //     return 'Sistem Tema';
-  //   }
-  // }
-
-  // void _showThemeDialog(ThemeProvider themeProvider) {
-  //   showDialog(
-  //     context: context,
-  //     builder: (BuildContext context) {
-  //       return AlertDialog(
-  //         title: const Text('Tema Seçimi'),
-  //         content: Column(
-  //           mainAxisSize: MainAxisSize.min,
-  //           children: [
-  //             _buildThemeOption('Açık Tema', Icons.light_mode, ThemeMode.light, themeProvider),
-  //             _buildThemeOption('Koyu Tema', Icons.dark_mode, ThemeMode.dark, themeProvider),
-  //             _buildThemeOption('Sistem Tema', Icons.settings, ThemeMode.system, themeProvider),
-  //           ],
-  //         ),
-  //         actions: [
-  //           TextButton(
-  //             onPressed: () => Navigator.pop(context),
-  //             child: const Text('Kapat'),
-  //           ),
-  //         ],
-  //       );
-  //     },
-  //   );
-  // }
-
-  // Widget _buildThemeOption(String title, IconData icon, ThemeMode mode, ThemeProvider themeProvider) {
-  //   final isSelected = themeProvider.themeMode == mode;
-  //   return ListTile(
-  //     leading: Icon(icon, color: isSelected ? Colors.purple[600] : Colors.grey),
-  //     title: Text(title),
-  //     trailing: isSelected 
-  //         ? Icon(Icons.check, color: Colors.purple[600])
-  //         : null,
-  //     onTap: () async {
-  //       await themeProvider.setThemeMode(mode);
-  //       if (!context.mounted) return;
-  //       Navigator.pop(context);
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Tema değiştirildi: $title')),
-  //       );
-  //     },
-  //   );
-  // }
-
-  void _showLanguageDialog() {
-    // Dil değiştirme özelliği kaldırıldı
-  }
 
   Future<void> _openOrdersPage() async {
     try {

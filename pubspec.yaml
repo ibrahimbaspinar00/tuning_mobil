@@ -59,6 +59,7 @@ dependencies:
   # UI components
   image_picker: ^1.1.2
   cached_network_image: ^3.4.1
+  file_picker: ^8.0.0
   
   # Share functionality
   share_plus: ^12.0.1

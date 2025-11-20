@@ -43,107 +43,16 @@ class ReviewService {
 
       debugPrint('Onaylı yorum sayısı: ${approvedReviews.length}');
 
-      // Demo yorumları kaldır - sadece gerçek yorumları göster
-      // if (approvedReviews.isEmpty) {
-      //   debugPrint('Hiç onaylı yorum yok, demo yorumlar döndürülüyor');
-      //   return _getDemoReviews(productId);
-      // }
-
       debugPrint('✓ Yorumlar başarıyla getirildi: ${approvedReviews.length} adet');
       return approvedReviews;
     } catch (e, stackTrace) {
       debugPrint('✗ Yorumlar getirilirken hata oluştu: $e');
       debugPrint('Stack trace: $stackTrace');
-      // Hata durumunda boş liste döndür (demo yorumlar kaldırıldı)
+      // Hata durumunda boş liste döndür
       return [];
     }
   }
 
-  // Demo yorumlar
-  static List<ProductReview> _getDemoReviews(String productId) {
-    return [
-      ProductReview(
-        id: 'demo_1',
-        productId: productId,
-        userId: 'demo_user_1',
-        userName: 'Ahmet Y.',
-        userEmail: 'ahmet@example.com',
-        rating: 5,
-        comment: 'Harika bir ürün! Çok memnun kaldım. Kalitesi çok iyi, kesinlikle tavsiye ederim.',
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 2)),
-        isApproved: true,
-        adminResponse: 'Teşekkür ederiz! Memnuniyetiniz bizim için çok değerli.',
-        adminResponseDate: DateTime.now().subtract(const Duration(days: 1)),
-        imageUrls: [],
-        isEdited: false,
-      ),
-      ProductReview(
-        id: 'demo_2',
-        productId: productId,
-        userId: 'demo_user_2',
-        userName: 'Fatma K.',
-        userEmail: 'fatma@example.com',
-        rating: 4,
-        comment: 'Güzel ürün ama kargo biraz geç geldi. Ürün kalitesi iyi, fiyat uygun.',
-        createdAt: DateTime.now().subtract(const Duration(days: 5)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 5)),
-        isApproved: true,
-        adminResponse: null,
-        adminResponseDate: null,
-        imageUrls: [],
-        isEdited: false,
-      ),
-      ProductReview(
-        id: 'demo_3',
-        productId: productId,
-        userId: 'demo_user_3',
-        userName: 'Mehmet S.',
-        userEmail: 'mehmet@example.com',
-        rating: 5,
-        comment: 'Mükemmel! Beklentilerimi aştı. Hızlı teslimat, kaliteli ürün. Tekrar alacağım.',
-        createdAt: DateTime.now().subtract(const Duration(days: 7)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 7)),
-        isApproved: true,
-        adminResponse: 'Çok teşekkür ederiz! Müşteri memnuniyeti bizim önceliğimiz.',
-        adminResponseDate: DateTime.now().subtract(const Duration(days: 6)),
-        imageUrls: [],
-        isEdited: false,
-      ),
-      ProductReview(
-        id: 'demo_4',
-        productId: productId,
-        userId: 'demo_user_4',
-        userName: 'Ayşe M.',
-        userEmail: 'ayse@example.com',
-        rating: 3,
-        comment: 'Orta kalitede bir ürün. Fiyatına göre makul ama çok özel değil.',
-        createdAt: DateTime.now().subtract(const Duration(days: 10)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 10)),
-        isApproved: true,
-        adminResponse: null,
-        adminResponseDate: null,
-        imageUrls: [],
-        isEdited: false,
-      ),
-      ProductReview(
-        id: 'demo_5',
-        productId: productId,
-        userId: 'demo_user_5',
-        userName: 'Can Ö.',
-        userEmail: 'can@example.com',
-        rating: 5,
-        comment: 'Süper! Çok kaliteli ve dayanıklı. Uzun süre kullanacağım. Teşekkürler.',
-        createdAt: DateTime.now().subtract(const Duration(days: 12)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 12)),
-        isApproved: true,
-        adminResponse: 'Rica ederiz! Kaliteli ürünler sunmaya devam edeceğiz.',
-        adminResponseDate: DateTime.now().subtract(const Duration(days: 11)),
-        imageUrls: [],
-        isEdited: false,
-      ),
-    ];
-  }
 
   // Kullanıcının bir ürün için yorumunu getir
   static Future<ProductReview?> getUserReviewForProduct(String productId, String userId) async {
@@ -393,7 +302,7 @@ class ReviewService {
         throw Exception('Yorum bulunamadı');
       }
 
-      final reviewData = reviewDoc.data()! as Map<String, dynamic>;
+      final reviewData = reviewDoc.data()!;
       if (reviewData['userId'] != user.uid) {
         throw Exception('Bu yorumu düzenleme yetkiniz yok');
       }

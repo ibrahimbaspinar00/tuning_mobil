@@ -227,8 +227,17 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
         ],
       ),
       body: widget.cartProducts.isEmpty
-          ? NoOverflow(
-              child: _buildEmptyCart(),
+          ? RefreshIndicator(
+              onRefresh: () async {
+                // Sepet boşsa sadece state'i güncelle
+                setState(() {});
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: NoOverflow(
+                  child: _buildEmptyCart(),
+                ),
+              ),
             )
           : SafeArea(
               child: LayoutBuilder(
@@ -237,9 +246,16 @@ class _SepetimSayfasiState extends State<SepetimSayfasi> {
                     children: [
                       // Ürün listesi - Scrollable olmalı
                       Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _buildProductList(),
+                        child: RefreshIndicator(
+                          onRefresh: () async {
+                            // Sepeti yenile
+                            setState(() {});
+                          },
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: _buildProductList(),
+                          ),
                         ),
                       ),
                       // Özet ve ödeme - Sabit kalmalı

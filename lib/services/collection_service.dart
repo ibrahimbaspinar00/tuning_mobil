@@ -33,7 +33,7 @@ class CollectionService {
       final collections = <Collection>[];
       for (var doc in snapshot.docs) {
         try {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc.data();
           data['id'] = doc.id;
           
           // Timestamp'leri düzelt

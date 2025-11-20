@@ -113,9 +113,9 @@ class _MainScreenState extends State<MainScreen> with AutomaticKeepAliveClientMi
       debugPrint('✓ NavigateToProductDetailById çağrılıyor...');
       
       // Kısa bir gecikme ekle (UI'nin hazır olması için)
-      final finalProductId = productId; // Null check için
+      final finalProductId = productId;
       Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted && finalProductId != null) {
+        if (mounted && finalProductId.isNotEmpty) {
           try {
             AppRoutes.navigateToProductDetailById(context, finalProductId);
             debugPrint('✓ Navigate işlemi tamamlandı');

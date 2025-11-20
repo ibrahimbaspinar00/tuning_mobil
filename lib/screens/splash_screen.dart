@@ -29,6 +29,7 @@ class _SplashScreenState extends State<SplashScreen>
   double _progress = 0.0;
   String _loadingText = 'Uygulama başlatılıyor...';
   final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSubscription; // Memory leak önleme
 
   @override
   void initState() {
@@ -41,7 +42,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   /// Deep link dinle
   void _listenToDeepLinks() {
-    _appLinks.uriLinkStream.listen((uri) {
+    // Memory leak önleme: Subscription'ı kaydet
+    _deepLinkSubscription?.cancel(); // Önceki subscription'ı iptal et
+    _deepLinkSubscription = _appLinks.uriLinkStream.listen((uri) {
       _handleDeepLink(uri);
     }, onError: (err) {
       debugPrint('Deep link error: $err');
@@ -348,7 +351,11 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
+  @override
   void dispose() {
+    // Memory leak önleme: Subscription'ı iptal et
+    _deepLinkSubscription?.cancel();
+    _deepLinkSubscription = null;
     _logoController.dispose();
     _textController.dispose();
     _progressController.dispose();

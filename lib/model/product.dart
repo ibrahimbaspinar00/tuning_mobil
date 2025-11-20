@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Product {
   final String id;
   final String name;
@@ -111,10 +113,9 @@ class Product {
       if (value == null) return DateTime.now();
       
       // Firebase Timestamp tipini kontrol et
-      if (value.toString().contains('Timestamp')) {
+      if (value is Timestamp) {
         try {
-          // Timestamp'i DateTime'a çevir
-          return DateTime.fromMillisecondsSinceEpoch(value.millisecondsSinceEpoch);
+          return value.toDate();
         } catch (e) {
           return DateTime.now();
         }
@@ -130,14 +131,41 @@ class Product {
         return value;
       }
       
+      // toString() ile kontrol et (fallback)
+      if (value.toString().contains('Timestamp')) {
+        try {
+          // Timestamp'i DateTime'a çevir
+          if (value.toString().contains('millisecondsSinceEpoch')) {
+            return DateTime.fromMillisecondsSinceEpoch(value.millisecondsSinceEpoch);
+          }
+        } catch (e) {
+          return DateTime.now();
+        }
+      }
+      
       return DateTime.now();
+    }
+    
+    // imageUrl için alternatif field isimlerini kontrol et
+    String getImageUrl() {
+      // Öncelik sırası: imageUrl > image_url > image
+      if (map['imageUrl'] != null && map['imageUrl'].toString().isNotEmpty) {
+        return map['imageUrl'].toString();
+      }
+      if (map['image_url'] != null && map['image_url'].toString().isNotEmpty) {
+        return map['image_url'].toString();
+      }
+      if (map['image'] != null && map['image'].toString().isNotEmpty) {
+        return map['image'].toString();
+      }
+      return '';
     }
     
     return Product(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       price: safeToDouble(map['price']),
-      imageUrl: map['imageUrl'] ?? '',
+      imageUrl: getImageUrl(),
       description: map['description'] ?? '',
       category: map['category'] ?? '',
       stock: safeToInt(map['stock']),

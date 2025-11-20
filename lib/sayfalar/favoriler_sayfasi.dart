@@ -439,64 +439,70 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
         
         // Ürün listesi
         Expanded(
-          child: _filteredProducts.isEmpty
-              ? SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Boş favori mesajı
-                      SizedBox(
-                        height: isSmallScreen ? 200 : isTablet ? 250 : 300,
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.favorite_border,
-                                size: isSmallScreen ? 60 : isTablet ? 80 : 100,
-                                color: Colors.grey[400],
-                              ),
-                              SizedBox(height: isSmallScreen ? 16 : 20),
-                              Text(
-                                _searchQuery.isNotEmpty
-                                    ? 'Arama kriterlerinize uygun ürün bulunamadı'
-                                    : 'Henüz favori ürününüz yok',
-                                style: TextStyle(
-                                  fontSize: isSmallScreen ? 14 : isTablet ? 16 : 18,
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w500,
+          child: RefreshIndicator(
+            onRefresh: () async {
+              // Favorileri yenile
+              setState(() {});
+            },
+            child: _filteredProducts.isEmpty
+                ? SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Column(
+                      children: [
+                        // Boş favori mesajı
+                        SizedBox(
+                          height: isSmallScreen ? 200 : isTablet ? 250 : 300,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.favorite_border,
+                                  size: isSmallScreen ? 60 : isTablet ? 80 : 100,
+                                  color: Colors.grey[400],
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
-                              if (_searchQuery.isEmpty) ...[
-                                SizedBox(height: isSmallScreen ? 8 : 12),
+                                SizedBox(height: isSmallScreen ? 16 : 20),
                                 Text(
-                                  'Beğendiğiniz ürünleri favorilere ekleyin',
+                                  _searchQuery.isNotEmpty
+                                      ? 'Arama kriterlerinize uygun ürün bulunamadı'
+                                      : 'Henüz favori ürününüz yok',
                                   style: TextStyle(
-                                    fontSize: isSmallScreen ? 12 : isTablet ? 14 : 16,
-                                    color: Colors.grey[500],
+                                    fontSize: isSmallScreen ? 14 : isTablet ? 16 : 18,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
-                                SizedBox(height: isSmallScreen ? 16 : 20),
-                                ElevatedButton.icon(
-                                  onPressed: widget.onNavigateToMainPage,
-                                  icon: const Icon(Icons.shopping_cart),
-                                  label: const Text('Ürünlere Gözat'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Theme.of(context).primaryColor,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                                if (_searchQuery.isEmpty) ...[
+                                  SizedBox(height: isSmallScreen ? 8 : 12),
+                                  Text(
+                                    'Beğendiğiniz ürünleri favorilere ekleyin',
+                                    style: TextStyle(
+                                      fontSize: isSmallScreen ? 12 : isTablet ? 14 : 16,
+                                      color: Colors.grey[500],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  SizedBox(height: isSmallScreen ? 16 : 20),
+                                  ElevatedButton.icon(
+                                    onPressed: widget.onNavigateToMainPage,
+                                    icon: const Icon(Icons.shopping_cart),
+                                    label: const Text('Ürünlere Gözat'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Theme.of(context).primaryColor,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                      // Önerilen ürünler
+                        // Önerilen ürünler
                       if (_searchQuery.isEmpty)
                         RecommendedProducts(
                           products: widget.favoriteProducts,
@@ -508,6 +514,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                   ),
                 )
               : GridView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.all(isSmallScreen ? 8 : 16),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: isSmallScreen ? 2 : isTablet ? 3 : 4,
@@ -521,6 +528,7 @@ class _FavorilerSayfasiState extends State<FavorilerSayfasi> with TickerProvider
                     return _buildProductCard(product, isSmallScreen, isTablet);
                   },
                 ),
+          ),
         ),
       ],
     );

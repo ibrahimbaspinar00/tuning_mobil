@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Kullanıcı giriş yapmış mı kontrol et
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function: Kullanıcı kendi verilerine mi erişiyor?
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // ==================== USERS COLLECTION ====================
+    // Kullanıcılar koleksiyonu - kullanıcı sadece kendi verilerini okuyabilir/yazabilir
+    match /users/{userId} {
+      // Kullanıcı kendi dokümanını okuyabilir
+      allow read: if isOwner(userId);
+      
+      // Kullanıcı kendi dokümanını oluşturabilir/güncelleyebilir
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+      
+      // ==================== USERS SUBCOLLECTIONS ====================
+      
+      // Favoriler alt koleksiyonu
+      match /favorites/{favoriteId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Sepet alt koleksiyonu
+      match /cart/{cartItemId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Adresler alt koleksiyonu
+      match /addresses/{addressId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Ödeme yöntemleri alt koleksiyonu
+      match /paymentMethods/{paymentMethodId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Cüzdan alt koleksiyonu
+      match /wallet/{walletDoc} {
+        allow read, write: if isOwner(userId);
+        
+        // Cüzdan işlem geçmişi
+        match /transactions/{transactionId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+      
+      // Bildirimler alt koleksiyonu
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // ==================== ORDERS COLLECTION ====================
+    // Siparişler koleksiyonu - kullanıcı sadece kendi siparişlerini görebilir
+    match /orders/{orderId} {
+      // Kullanıcı sadece kendi siparişlerini okuyabilir
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Kullanıcı kendi siparişini oluşturabilir
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Kullanıcı kendi siparişini güncelleyemez (sadece admin)
+      allow update: if false;
+      allow delete: if false;
+    }
+    
+    // ==================== PRODUCTS COLLECTION ====================
+    // Ürünler koleksiyonu - herkes okuyabilir, sadece admin yazabilir
+    match /products/{productId} {
+      allow read: if true; // Herkes ürünleri görebilir
+      allow write: if false; // Sadece admin (şimdilik kapalı)
+    }
+    
+    // ==================== COLLECTIONS COLLECTION ====================
+    // Koleksiyonlar - kullanıcı sadece kendi koleksiyonlarını görebilir
+    match /collections/{collectionId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== NOTIFICATIONS COLLECTION ====================
+    // Bildirimler koleksiyonu - kullanıcı sadece kendi bildirimlerini görebilir
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if false; // Sadece backend (Cloud Functions) oluşturabilir
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== CAMPAIGNS COLLECTION ====================
+    // Kampanyalar koleksiyonu - herkes okuyabilir
+    match /campaigns/{campaignId} {
+      allow read: if true;
+      allow write: if false; // Sadece admin
+    }
+    
+    // ==================== CATEGORIES COLLECTION ====================
+    // Kategoriler koleksiyonu - herkes okuyabilir
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if false; // Sadece admin
+    }
+    
+    // ==================== REVIEWS COLLECTION ====================
+    // Yorumlar koleksiyonu - kullanıcı kendi yorumlarını yazabilir
+    match /reviews/{reviewId} {
+      allow read: if true; // Herkes yorumları görebilir
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Diğer tüm koleksiyonlar için varsayılan: erişim yok
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

@@ -17,10 +17,16 @@ class ThemeProvider extends ChangeNotifier {
   }
   
   Future<void> _loadSettings() async {
-    await ThemeService.loadTheme();
-    _themeMode = ThemeService.themeMode;
-    _isInitialized = true;
-    notifyListeners();
+    try {
+      await ThemeService.loadTheme();
+      _themeMode = ThemeService.themeMode;
+    } catch (e) {
+      // Hata durumunda varsayılan tema kullan
+      _themeMode = ThemeMode.system;
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
+    }
   }
   
   Future<void> setThemeMode(ThemeMode mode) async {

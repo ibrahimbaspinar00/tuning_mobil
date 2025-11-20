@@ -248,57 +248,6 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
                     ),
                   ),
                 ),
-                
-                const SizedBox(height: 20),
-                
-                // Bildirim Geçmişi Butonu
-                Container(
-                  width: double.infinity,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange[300]!),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withValues(alpha: 0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: _showNotificationHistory,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.history, color: Colors.orange[600]),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Bildirim Geçmişi',
-                            style: TextStyle(
-                              color: Colors.orange[600],
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -396,22 +345,6 @@ class _BildirimAyarlariSayfasiState extends State<BildirimAyarlariSayfasi> {
             activeTrackColor: Colors.orange[200],
             inactiveThumbColor: Colors.grey[400],
             inactiveTrackColor: Colors.grey[200],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showNotificationHistory() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Bildirim Geçmişi'),
-        content: const Text('Bildirim geçmişi özelliği geliştiriliyor...'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Tamam'),
           ),
         ],
       ),

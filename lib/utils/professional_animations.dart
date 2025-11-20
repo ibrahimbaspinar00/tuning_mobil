@@ -151,6 +151,21 @@ class _StaggeredAnimationListState extends State<StaggeredAnimationList>
     _startAnimations();
   }
 
+  @override
+  void didUpdateWidget(StaggeredAnimationList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Children listesi değiştiyse animasyonları yeniden başlat
+    if (oldWidget.children.length != widget.children.length) {
+      // Eski controller'ları dispose et
+      for (var controller in _controllers) {
+        controller.dispose();
+      }
+      // Yeni animasyonları başlat
+      _initializeAnimations();
+      _startAnimations();
+    }
+  }
+
   void _initializeAnimations() {
     _controllers = List.generate(
       widget.children.length,
@@ -174,7 +189,7 @@ class _StaggeredAnimationListState extends State<StaggeredAnimationList>
   void _startAnimations() {
     for (int i = 0; i < _controllers.length; i++) {
       Future.delayed(widget.delay * i, () {
-        if (mounted) {
+        if (mounted && i < _controllers.length) {
           _controllers[i].forward();
         }
       });
@@ -191,8 +206,18 @@ class _StaggeredAnimationListState extends State<StaggeredAnimationList>
 
   @override
   Widget build(BuildContext context) {
+    // Güvenlik kontrolü: animations listesi ile children listesi eşleşmeli
+    final safeLength = _animations.length < widget.children.length 
+        ? _animations.length 
+        : widget.children.length;
+    
     return Column(
-      children: List.generate(widget.children.length, (index) {
+      children: List.generate(safeLength, (index) {
+        // Ekstra güvenlik kontrolü
+        if (index >= _animations.length || index >= widget.children.length) {
+          return widget.children[index < widget.children.length ? index : 0];
+        }
+        
         return AnimatedBuilder(
           animation: _animations[index],
           builder: (context, child) {

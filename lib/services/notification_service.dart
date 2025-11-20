@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../model/notification.dart';
 import 'fcm_service_account_service.dart';
 
@@ -22,6 +23,10 @@ class NotificationService {
 
   String? _fcmToken;
   bool _isInitialized = false;
+  
+  // Stream subscriptions for memory leak prevention
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
 
   /// Servisi başlat
   Future<void> initialize() async {
@@ -41,13 +46,13 @@ class NotificationService {
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
       
       // Foreground message handler
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      // Memory leak önleme: Subscription'ları kaydet
+      _foregroundMessageSubscription?.cancel(); // Önceki subscription'ı iptal et
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
       
       // Notification tap handler
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-      
-      // App açıkken gelen bildirimler
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      _messageOpenedSubscription?.cancel(); // Önceki subscription'ı iptal et
+      _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
       
       _isInitialized = true;
       print('✅ NotificationService başlatıldı');
@@ -427,7 +432,8 @@ class NotificationService {
     }).handleError((error, stackTrace) {
       print('❌ Bildirimler yüklenirken hata: $error');
       print('Stack trace: $stackTrace');
-      // Hata durumunda Stream devam eder ama boş liste döndürülür
+      // Hata durumunda boş liste döndür
+      return <AppNotification>[];
     });
   }
 
@@ -498,6 +504,17 @@ class NotificationService {
 
   /// Servis başlatıldı mı?
   bool get isInitialized => _isInitialized;
+  
+  /// Servisi temizle (memory leak önleme)
+  /// NOT: Singleton olduğu için genellikle çağrılmaz, ama test veya reset için kullanılabilir
+  void dispose() {
+    _foregroundMessageSubscription?.cancel();
+    _foregroundMessageSubscription = null;
+    _messageOpenedSubscription?.cancel();
+    _messageOpenedSubscription = null;
+    _isInitialized = false;
+    debugPrint('✅ NotificationService temizlendi');
+  }
 }
 
 /// Background message handler

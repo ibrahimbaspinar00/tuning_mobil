@@ -17,9 +17,13 @@ import 'utils/performance_optimizer.dart';
 import 'utils/advanced_error_handler.dart';
 import 'utils/advanced_cache_manager.dart';
 import 'utils/network_manager.dart';
+import 'utils/app_performance_manager.dart';
 import 'theme/professional_theme.dart';
 import 'services/campaign_notification_service.dart';
 import 'services/enhanced_notification_service.dart';
+
+/// Global navigator key for navigation from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 /// Background message handler - Uygulama kapalıyken çalışır
 /// Bu fonksiyon top-level olmalı (main dışında, class dışında)
@@ -73,11 +77,24 @@ void main() async {
     FlutterError.onError = (FlutterErrorDetails details) {
       debugPrint('Flutter Error: ${details.exception}');
       debugPrint('Stack trace: ${details.stack}');
+      
+      // Firestore quota hatası kontrolü
+      if (details.exception.toString().contains('RESOURCE_EXHAUSTED') || 
+          details.exception.toString().contains('Quota exceeded')) {
+        debugPrint('⚠️ Firestore quota exceeded - Uygulama devam edecek ama bazı özellikler çalışmayabilir');
+      }
     };
     
     PlatformDispatcher.instance.onError = (error, stack) {
       debugPrint('Platform Error: $error');
       debugPrint('Stack trace: $stack');
+      
+      // Firestore quota hatası kontrolü
+      if (error.toString().contains('RESOURCE_EXHAUSTED') || 
+          error.toString().contains('Quota exceeded')) {
+        debugPrint('⚠️ Firestore quota exceeded - Uygulama devam edecek ama bazı özellikler çalışmayabilir');
+      }
+      
       return true;
     };
   }
@@ -110,8 +127,9 @@ void main() async {
   // Start app
   runApp(const MyApp());
   
-  // Background initialization
+  // Background initialization - performans yönetimini başlat
   _initializeApp();
+  AppPerformanceManager().startMonitoring();
 }
 
 void _optimizeApp() {
@@ -198,6 +216,7 @@ class MyApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
           return MaterialApp(
+            navigatorKey: navigatorKey,
             debugShowCheckedModeBanner: false,
             title: 'Tuning Store',
             theme: ProfessionalTheme.lightTheme.copyWith(

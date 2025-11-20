@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class WalletService {
   static const String _balanceKey = 'wallet_balance';
@@ -21,11 +22,21 @@ class WalletService {
   double get currentBalance => _currentBalance;
   List<WalletTransaction> get transactions => List.from(_transactions);
   
+  // Firebase'in initialize edilip edilmediğini kontrol et
+  bool _isFirebaseInitialized() {
+    try {
+      Firebase.app();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  
   // Initialize wallet (Firebase'den yükle, yoksa local'den)
   Future<void> initialize() async {
     final user = _auth.currentUser;
     
-    if (user != null) {
+    if (user != null && _isFirebaseInitialized()) {
       try {
         // Önce Firebase'den yükle
         final walletDoc = await _firestore.collection('users').doc(user.uid).collection('wallet').doc('balance').get();
@@ -180,7 +191,7 @@ class WalletService {
   // Save to Firebase
   Future<void> _saveToFirebase() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null || !_isFirebaseInitialized()) return;
     
     try {
       // Balance'ı kaydet
@@ -194,37 +205,46 @@ class WalletService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       
-      // Son 100 transaction'ı kaydet
-      final batch = _firestore.batch();
-      final transactionsRef = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('wallet')
-          .doc('transactions')
-          .collection('history');
-      
-      // Önce mevcut transaction'ları temizle (son 100'ü saklamak için)
-      final existingTransactions = await transactionsRef.limit(100).get();
-      for (final doc in existingTransactions.docs) {
-        batch.delete(doc.reference);
+      // Transaction'ları kaydet (sadece yeni olanları - quota tasarrufu için)
+      // Son 50 transaction'ı kaydet (100 yerine 50 - quota tasarrufu)
+      if (_transactions.isNotEmpty) {
+        try {
+          final batch = _firestore.batch();
+          final transactionsRef = _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('wallet')
+              .doc('transactions')
+              .collection('history');
+          
+          // Sadece son 50 transaction'ı kaydet
+          for (final transaction in _transactions.take(50)) {
+            final docRef = transactionsRef.doc(transaction.id);
+            batch.set(docRef, {
+              'amount': transaction.amount,
+              'type': transaction.type.toString().split('.').last,
+              'paymentMethod': transaction.paymentMethod,
+              'description': transaction.description,
+              'timestamp': Timestamp.fromDate(transaction.timestamp),
+              'status': transaction.status.toString().split('.').last,
+            }, SetOptions(merge: true)); // merge kullanarak mevcut transaction'ları silmeden güncelle
+          }
+          
+          await batch.commit();
+        } catch (e) {
+          // Transaction kaydetme hatası kritik değil, sadece logla
+          debugPrint('Error saving transactions to Firebase (non-critical): $e');
+        }
       }
-      
-      // Yeni transaction'ları ekle
-      for (final transaction in _transactions.take(100)) {
-        final docRef = transactionsRef.doc(transaction.id);
-        batch.set(docRef, {
-          'amount': transaction.amount,
-          'type': transaction.type.toString().split('.').last,
-          'paymentMethod': transaction.paymentMethod,
-          'description': transaction.description,
-          'timestamp': Timestamp.fromDate(transaction.timestamp),
-          'status': transaction.status.toString().split('.').last,
-        });
-      }
-      
-      await batch.commit();
     } catch (e) {
       debugPrint('Error saving wallet to Firebase: $e');
+      // Quota hatası durumunda local storage'a kaydet
+      if (e.toString().contains('RESOURCE_EXHAUSTED') || 
+          e.toString().contains('Quota exceeded')) {
+        debugPrint('Firestore quota exceeded, saving to local storage only');
+        await _saveToLocalStorage();
+      }
+      rethrow; // Hata durumunda rethrow et ki çağıran kod bilgilendirilsin
     }
   }
   

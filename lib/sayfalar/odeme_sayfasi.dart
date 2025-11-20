@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../widgets/no_overflow.dart';
 import '../model/product.dart';
 import '../services/user_auth_service.dart';
-import '../services/discount_wheel_service.dart';
 import '../services/order_service.dart';
 import '../services/payment_service.dart';
 import '../widgets/error_handler.dart';
@@ -52,9 +51,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
   double _couponDiscount = 0.0;
   bool _isCouponApplied = false;
   
-  // Çark ödülleri
-  final DiscountWheelService _wheelService = DiscountWheelService();
-  List<ActiveReward> _activeRewards = [];
+  // Çark ödülleri kaldırıldı
   // Seçilen kayıtlı adres ve kart
   Adres? _selectedSavedAddress;
   OdemeYontemi? _selectedSavedCard;
@@ -83,7 +80,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
     _loadUserData();
     _loadSavedAddresses();
     _loadSavedPaymentMethods();
-    _loadActiveRewards();
+    // Çark ödülleri kaldırıldı
     
     // Sepet sayfasından gelen kupon bilgilerini ayarla
     _appliedCoupon = widget.appliedCoupon;
@@ -162,23 +159,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
       return;
     }
     
-    // Önce çark kupon kodlarını kontrol et
-    final wheelReward = _wheelService.useCouponCode(couponCode);
-    if (wheelReward != null) {
-      setState(() {
-        _appliedCoupon = wheelReward.couponCode ?? '';
-        _couponDiscount = wheelReward.discountPercent / 100;
-        _isCouponApplied = true;
-        _activeRewards = _wheelService.getActiveRewards();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🎉 ${wheelReward.name} kuponu uygulandı!'),
-          backgroundColor: wheelReward.color,
-        ),
-      );
-      return;
-    }
+    // Çark kupon sistemi kaldırıldı
     
     // Manuel kupon kodlarını kontrol et
     switch (couponCode.toUpperCase()) {
@@ -261,54 +242,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
     );
   }
   
-  Future<void> _loadActiveRewards() async {
-    try {
-      await _wheelService.initialize();
-      setState(() {
-        _activeRewards = _wheelService.getActiveRewards();
-      });
-    } catch (e) {
-      // Çark ödülleri yüklenemedi
-    }
-  }
-  
-  void _useReward(ActiveReward reward) {
-    if (reward.isExpired) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bu ödülün süresi dolmuş')),
-      );
-      return;
-    }
-    
-    if (reward.isUsed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bu ödül zaten kullanılmış')),
-      );
-      return;
-    }
-    
-    // Ödülü kullan
-    final success = _wheelService.useReward(reward.id);
-    if (success) {
-      setState(() {
-        _couponDiscount = reward.discountPercent / 100;
-        _appliedCoupon = reward.id;
-        _isCouponApplied = true;
-        _activeRewards = _wheelService.getActiveRewards();
-      });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🎉 ${reward.name} ödülü kullanıldı!'),
-          backgroundColor: reward.color,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ödül kullanılırken hata oluştu')),
-      );
-    }
-  }
+  // Çark ödülleri metodları kaldırıldı
 
   // Kayıtlı ödeme yöntemlerini yükle
   Future<void> _loadSavedPaymentMethods() async {
@@ -598,71 +532,7 @@ class _OdemeSayfasiState extends State<OdemeSayfasi> {
                     ),
                   ],
                   
-                  // Çark Ödülleri
-                  if (_activeRewards.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Çark Ödülleriniz:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ..._activeRewards.map((reward) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: reward.color.withOpacity( 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: reward.color.withOpacity( 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(reward.icon, color: reward.color, size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  reward.name,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: reward.color,
-                                  ),
-                                ),
-                                Text(
-                                  'Kalan süre: ${reward.timeRemainingString}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.orange[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => _useReward(reward),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: reward.color,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              'Kullan', 
-                              style: TextStyle(fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )).toList(),
-                  ],
+                  // Çark Ödülleri kaldırıldı
                 ],
               ),
             ),
